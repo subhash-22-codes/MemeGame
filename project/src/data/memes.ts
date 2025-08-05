@@ -10,8 +10,8 @@ export interface Meme {
 export const MEMES: Meme[] = [
   {
     id: '1',
-    url: 'https://images.pexels.com/photos/5091121/pexels-photo-5091121.jpeg',
-    title: 'Confused Cat',
+    url: 'https://cdn.pixabay.com/photo/2022/09/06/15/22/meme-7436922_640.png',
+    title: 'Confused Nigga',
     tags: ['cat', 'confused']
   },
   {

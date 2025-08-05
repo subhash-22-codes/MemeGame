@@ -114,9 +114,9 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
                 All memes scored! Ready to submit round scores
               </span>
             </div>
-            <div className="text-xs text-[#5F8B4C] mt-1 text-center">
+            {/* <div className="text-xs text-[#5F8B4C] mt-1 text-center">
               Debug: allScored={allScored.toString()}, scoredSubmissions={submissions.filter(s => s.score !== undefined).length}
-            </div>
+            </div> */}
           </div>
         )}
       </div>
@@ -209,11 +209,11 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
                 )}
 
                 {/* Debug Info for Judge */}
-                {isJudge && (
+                {/* {isJudge && (
                   <div className="mt-2 text-xs text-red-500 font-mono">
                     Debug: score={submission.score}, scoreType={typeof submission.score}, isJudge={isJudge.toString()}
                   </div>
-                )}
+                )} */}
 
                 {/* Score Display */}
                 {submission.score !== undefined && (
@@ -274,7 +274,7 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
       )}
 
       {/* Debug Info */}
-      <div className="mt-4 p-3 bg-gray-100 rounded-lg">
+      {/* <div className="mt-4 p-3 bg-gray-100 rounded-lg">
         <div className="text-xs font-mono text-gray-600">
           Debug Info:
           <br />
@@ -288,7 +288,7 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
           <br />
           • All Scored: {allScored.toString()}
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };
