@@ -23,6 +23,8 @@ type AuthContextType = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  sendOtp: (email: string, purpose: 'register' | 'reset') => Promise<void>;
+  verifyOtp: (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => Promise<void>;
   logout: () => void;
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
 };
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [otpContext, setOtpContext] = useState<{ email: string; purpose: 'register' | 'reset'; pending: boolean; temp?: { username?: string; password?: string } } | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -66,16 +69,12 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password })
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Registration failed');
-      }
-
       const data = await response.json();
-      setUser(data.user);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.setItem('token', data.token);
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+      // Expect OTP to be sent; set pending OTP state
+      setOtpContext({ email, purpose: 'register', pending: true, temp: { username, password } });
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;
@@ -92,18 +91,56 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Login failed');
-      }
-
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
       setUser(data.user);
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('token', data.token);
+      if (data.sessionId) localStorage.setItem('sessionId', data.sessionId);
     } catch (error) {
       console.error('Login failed:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendOtp = async (email: string, purpose: 'register' | 'reset') => {
+    const response = await fetch('/api/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, purpose })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to send OTP');
+    }
+    setOtpContext({ email, purpose, pending: true, temp: otpContext?.temp });
+  };
+
+  const verifyOtp = async (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'OTP verification failed');
+      }
+      setUser(data.user);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('token', data.token);
+      if (data.sessionId) {
+        localStorage.setItem('sessionId', data.sessionId);
+      }
+      setOtpContext(null);
+    } catch (error) {
+      console.error('OTP verification failed:', error);
       throw error;
     } finally {
       setLoading(false);
@@ -135,6 +172,8 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         loading,
         login,
         register,
+        sendOtp,
+        verifyOtp,
         logout,
         authFetch
       }}

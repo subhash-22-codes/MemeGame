@@ -30,6 +30,13 @@ export type MemeSubmission = {
   score?: number;
 };
 
+export type FinalResult = {
+  winner: { id: string; username?: string; score: number; avatar?: string };
+  players: Array<{ id: string; username?: string; score: number; avatar?: string }>;
+  totalRounds: number;
+  completedAt?: string;
+};
+
 export type GameState = {
   roomId: string;
   players: Player[];
@@ -40,6 +47,7 @@ export type GameState = {
   roundsPerJudge: number;
   timeLeft: number;
   timerEndTime?: number; // For synchronized timer
+  finalResult?: FinalResult;
   gamePhase:
     | 'lobby'
     | 'judgeSelection'
@@ -116,9 +124,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   // Refs to persist across re-renders
   const socketRef = useRef<Socket | null>(null);
   const reconnectionTimeoutRef = useRef<number | null>(null);
+  const clientMsgCounterRef = useRef<number>(0);
+  const lastDiscardedRoomIdRef = useRef<string | null>(null);
 
   const isReconnectingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const isInitializingRef = useRef<boolean>(false);
 
   // Generate session ID
   const generateSessionId = useCallback(() => {
@@ -139,6 +150,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     };
     
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem('playerId', playerId);
   }, [generateSessionId]);
 
   // Load game session from localStorage
@@ -186,6 +198,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
     console.warn(`[SOCKET] Cannot emit ${event}: socket not connected`);
     return false;
+  }, []);
+
+  // Generate idempotency token per client emission
+  const generateClientMsgId = useCallback(() => {
+    clientMsgCounterRef.current += 1;
+    return `cmsg-${Date.now()}-${clientMsgCounterRef.current}-${Math.random().toString(36).slice(2, 7)}`;
   }, []);
 
   // Enhanced state updater with validation
@@ -244,22 +262,24 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     
 
     // Don't create multiple connections
-    if (socketRef.current?.connected) {
-      console.log('[SOCKET] Connection already exists');
+    if (socketRef.current?.connected || isInitializingRef.current) {
+      console.log('[SOCKET] Connection already exists or initializing');
       return;
     }
 
     console.log('[SOCKET] Initializing connection for user:', user.id);
     setConnectionState('connecting');
+    isInitializingRef.current = true;
 
     const socketOptions = {
       forceNew: true,
       transports: ['websocket', 'polling'],
-      timeout: 20000,
+      timeout: 30000,
       reconnection: true,
       reconnectionAttempts: MAX_RECONNECTION_ATTEMPTS,
       reconnectionDelay: RECONNECTION_DELAY,
-      maxReconnectionAttempts: MAX_RECONNECTION_ATTEMPTS
+      maxReconnectionAttempts: MAX_RECONNECTION_ATTEMPTS,
+      autoConnect: true
     };
 
     const newSocket = io(`${window.location.protocol}//${window.location.hostname}:5000`, socketOptions);
@@ -273,6 +293,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       setConnectionState('connected');
       setReconnectionAttempts(0);
       isReconnectingRef.current = false;
+      isInitializingRef.current = false;
 
       // Clear any pending reconnection timeouts
       if (reconnectionTimeoutRef.current) {
@@ -304,8 +325,8 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       console.log('[SOCKET] Disconnected:', reason);
       setConnectionState('disconnected');
 
-      // Auto-reconnect on unexpected disconnection (not manual)
-      if (reason === 'io server disconnect' || reason === 'transport close') {
+      // Auto-reconnect for mobile background/lock cases
+      if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'ping timeout') {
         console.log('[SOCKET] Unexpected disconnect, attempting reconnection');
         if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
           attemptReconnection();
@@ -326,15 +347,16 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     });
 
     // Room event handlers with enhanced error handling
-    newSocket.on('roomJoined', (data: { roomData: GameState; sessionId: string }) => {
+    newSocket.on('roomJoined', (data: { roomData: Partial<GameState> & { roomId: string; currentRound?: number; players: Player[]; timeLeft?: number; submissions?: MemeSubmission[]; gamePhase?: GameState['gamePhase'] }; sessionId: string }) => {
       console.log('[SOCKET] Room joined:', data.roomData.roomId);
 
       const newGameState: GameState = {
-        ...data.roomData,
+        ...(data.roomData as GameState),
         availableMemes: MEMES,
         submissions: data.roomData.submissions || [],
         timeLeft: data.roomData.timeLeft || 0,
         gamePhase: data.roomData.gamePhase || 'lobby',
+        roundNumber: data.roomData.roundNumber ?? data.roomData.currentRound ?? 0,
         sessionId: data.sessionId
       };
 
@@ -346,14 +368,15 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       saveGameSession(newGameState.roomId, user.id);
     });
 
-    newSocket.on('roomRejoined', (data: { roomData: GameState; restored: boolean }) => {
+    newSocket.on('roomRejoined', (data: { roomData: Partial<GameState> & { roomId: string; currentRound?: number; players: Player[]; submissions?: MemeSubmission[]; timeLeft?: number }; restored: boolean }) => {
       console.log('[SOCKET] Room rejoined:', data.roomData.roomId, 'Restored:', data.restored);
 
       const newGameState: GameState = {
-        ...data.roomData,
+        ...(data.roomData as GameState),
         availableMemes: MEMES,
         submissions: data.roomData.submissions || [],
-        timeLeft: data.roomData.timeLeft || 0
+        timeLeft: data.roomData.timeLeft || 0,
+        roundNumber: data.roomData.roundNumber ?? data.roomData.currentRound ?? 0
       };
 
       setGameState(newGameState);
@@ -388,24 +411,27 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   newSocket.on('playerJoined', (players: Player[]) => {
   console.log('[SOCKET] Player joined, updating players:', players.length);
 
-  updateGameState((prev) => {
-    if (!prev) return null;
+  // Debounce via microtask to avoid setState in render warnings
+  Promise.resolve().then(() => {
+    updateGameState((prev) => {
+      if (!prev) return null;
 
-    const currentPlayerId = localStorage.getItem('playerId');
+      const currentPlayerId = localStorage.getItem('playerId');
 
-    const newPlayer = players.find(
-      (p) => !prev.players.some((prevP) => prevP.id === p.id)
-    );
+      const newPlayer = players.find(
+        (p) => !prev.players.some((prevP) => prevP.id === p.id)
+      );
 
-    if (newPlayer) {
-      if (newPlayer.id === currentPlayerId) {
-        toast.success('You joined the room');
-      } else {
-        toast.success(`${newPlayer.username} joined the room`);
+      if (newPlayer) {
+        if (newPlayer.id === currentPlayerId) {
+          toast.success('You joined the room');
+        } else {
+          toast.success(`${newPlayer.username} joined the room`);
+        }
       }
-    }
 
-    return { ...prev, players };
+      return { ...prev, players };
+    });
   });
 });
 
@@ -416,31 +442,34 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   console.log('[SOCKET] Player left:', data.disconnectedPlayerId);
   console.log('[SOCKET] Updated players list:', data.players);
 
-  updateGameState((prev) => {
-    if (!prev) return null;
+  // Debounce via microtask to avoid setState in render warnings
+  Promise.resolve().then(() => {
+    updateGameState((prev) => {
+      if (!prev) return null;
 
-    // Find disconnected player name before updating players
-    const disconnectedPlayer = prev.players.find(p => p.id === data.disconnectedPlayerId);
-    const playerName = disconnectedPlayer?.username || 'A player';
-    
-    toast(`${playerName} left the room`);
+      // Find disconnected player name before updating players
+      const disconnectedPlayer = prev.players.find(p => p.id === data.disconnectedPlayerId);
+      const playerName = disconnectedPlayer?.username || 'A player';
+      
+      toast(`${playerName} left the room`);
 
-    const updatedState = { ...prev, players: data.players };
+      const updatedState = { ...prev, players: data.players };
 
-    // If the disconnected player was the host, assign a new host
-    if (data.players.length > 0) {
-      const newHost = data.players[0];
-      if (newHost.id === user.id && !isHost) {
-        setIsHost(true)
-        console.log('[SOCKET] You are now the host');
-      } else if (newHost.id !== user.id && isHost) {
+      // If the disconnected player was the host, assign a new host
+      if (data.players.length > 0) {
+        const newHost = data.players[0];
+        if (newHost.id === user.id && !isHost) {
+          setIsHost(true)
+          console.log('[SOCKET] You are now the host');
+        } else if (newHost.id !== user.id && isHost) {
+          setIsHost(false);
+        }
+      } else {
         setIsHost(false);
       }
-    } else {
-      setIsHost(false);
-    }
 
-    return updatedState;
+      return updatedState;
+    });
   });
 });
 
@@ -451,8 +480,23 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       updateGameState((prev) => prev ? { ...prev, players: data.players } : null);
     });
 
+    newSocket.on('playerDisconnected', (data: { playerId: string; roomId: string }) => {
+      console.log('[SOCKET] Player disconnected:', data.playerId);
+      updateGameState((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          players: prev.players.map(p => p.id === data.playerId ? { ...p, isConnected: false, lastSeen: new Date() } : p)
+        };
+      });
+    });
+
     newSocket.on('roomDiscarded', () => {
       console.log('[SOCKET] Room discarded by host');
+      // Remember discarded room to prevent stale re-joins
+      if (gameState?.roomId) {
+        lastDiscardedRoomIdRef.current = gameState.roomId;
+      }
       alert('Room has been discarded by the host.');
       
       clearGameSession();
@@ -474,9 +518,27 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     prev ? { ...prev, gamePhase: newPhase } : null
   );
 });
-    newSocket.on('gameStateUpdate', (newState: GameState) => {
+    newSocket.on('gameStateUpdate', (newState: Partial<GameState> & { currentRound?: number }) => {
       console.log('[SOCKET] gameStateUpdate received:', newState);
-      updateGameState(() => newState);
+      const normalized: GameState = {
+        ...(newState as GameState),
+        roundNumber: (newState.roundNumber ?? newState.currentRound ?? 0) as number
+      };
+      updateGameState(() => normalized);
+    });
+
+    newSocket.on('gameEnded', (payload: Partial<GameState> & { finalResult?: FinalResult }) => {
+      console.log('[SOCKET] Game ended');
+      updateGameState((prev) => {
+        const next: GameState = {
+          ...(prev || (payload as GameState)),
+          ...(payload as Partial<GameState>),
+          gamePhase: 'results',
+          finalResult: payload.finalResult ?? prev?.finalResult
+        } as GameState;
+        return next;
+      });
+      toast.success('Game finished! Showing final results.');
     });
 
     newSocket.on('judgeSelected', (judge: Player) => {
@@ -515,21 +577,20 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
     newSocket.on('memeScored', ({ playerId, score }: { playerId: string; score: number }) => {
       console.log('[SOCKET] Meme scored:', playerId, score);
+      // Update submission score locally; do NOT increment player total here to avoid double-counting.
+      // The authoritative total will arrive in the subsequent gameStateUpdate from the server.
       updateGameState((prev) => {
         if (!prev) return null;
         return {
           ...prev,
           submissions: prev.submissions.map((sub) =>
             sub.playerId === playerId ? { ...sub, score } : sub
-          ),
-          players: prev.players.map((p) =>
-            p.id === playerId ? { ...p, score: p.score + score } : p
-          ),
-        };
+          )
+        } as GameState;
       });
     });
 
-    newSocket.on('gameStarted', (roomData: Partial<GameState>) => {
+    newSocket.on('gameStarted', (roomData: Partial<GameState> & { currentRound?: number }) => {
       console.log('[SOCKET] Game started');
       updateGameState((prev) =>
         prev
@@ -537,16 +598,20 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
               ...prev,
               gamePhase: 'judgeSelection',
               currentJudge: roomData.currentJudge,
-              roundNumber: roomData.roundNumber || prev.roundNumber,
+              roundNumber: (roomData.roundNumber ?? roomData.currentRound ?? prev.roundNumber) as number,
               players: roomData.players || prev.players,
             }
           : null
       );
     });
 
-    newSocket.on('roundStarted', (updatedRoom: GameState) => {
+    newSocket.on('roundStarted', (updatedRoom: Partial<GameState> & { currentRound?: number }) => {
       console.log('[SOCKET] Round started:', updatedRoom);
-      updateGameState(() => updatedRoom);
+      const normalized: GameState = {
+        ...(updatedRoom as GameState),
+        roundNumber: (updatedRoom.roundNumber ?? updatedRoom.currentRound ?? 0) as number
+      };
+      updateGameState(() => normalized);
     });
 
     newSocket.on('chatMessage', (message: ChatMessage) => {
@@ -601,6 +666,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       newSocket.disconnect();
       socketRef.current = null;
       setSocket(null);
+      isInitializingRef.current = false;
     };
   }, [user, updateGameState, loadGameSession, saveGameSession, clearGameSession, safeEmit, attemptReconnection, reconnectionAttempts, isHost]);
 
@@ -649,6 +715,20 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     
     return cleanup;
   }, [user, initializeSocket, clearGameSession]);
+
+  // Attempt reconnect when app returns to foreground (mobile screen on)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (!socketRef.current || !socketRef.current.connected) {
+          console.log('[SOCKET] Visibility change: trying to reconnect');
+          initializeSocket();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [initializeSocket]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -764,6 +844,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       }
     }
 
+    // Block joining a room that was just discarded
+    if (lastDiscardedRoomIdRef.current === roomId) {
+      clearGameSession();
+      throw new Error('Room was discarded by host');
+    }
+
     console.log('[GAME] Joining room:', roomId);
 
     return new Promise<void>((resolve, reject) => {
@@ -781,6 +867,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           isJudge: false,
           isReady: true,
         },
+        sessionId: (loadGameSession() || { sessionId: sessionIdRef.current })?.sessionId || (() => { sessionIdRef.current = generateSessionId(); return sessionIdRef.current; })()
       });
 
       // Listen for roomJoined event
@@ -821,6 +908,9 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         if (socketRef.current) {
           socketRef.current.off('roomJoined', handleRoomJoined);
           socketRef.current.off('error', handleError);
+        }
+        if (data.code === 'ROOM_NOT_FOUND') {
+          clearGameSession();
         }
         
         reject(new Error(data.error));
@@ -868,8 +958,8 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   const submitSentence = useCallback((sentence: string) => {
     if (!gameState?.roomId) return;
-    safeEmit('submitSentence', { roomId: gameState.roomId, sentence });
-  }, [gameState?.roomId, safeEmit]);
+    safeEmit('submitSentence', { roomId: gameState.roomId, sentence, clientMsgId: generateClientMsgId() });
+  }, [gameState?.roomId, safeEmit, generateClientMsgId]);
 
   const selectMeme = useCallback((memeId: string) => {
     if (!gameState?.roomId || !user) return;
@@ -877,8 +967,9 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       roomId: gameState.roomId,
       playerId: user.id,
       memeId,
+      clientMsgId: generateClientMsgId()
     });
-  }, [gameState?.roomId, user, safeEmit]);
+  }, [gameState?.roomId, user, safeEmit, generateClientMsgId]);
 
   const scoreMeme = useCallback((playerId: string, score: number) => {
     if (!gameState?.roomId || !user) return;
@@ -886,14 +977,15 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       roomId: gameState.roomId,
       playerId,
       score,
-      judgeId: user.id,  // Add judge ID for validation
+      judgeId: user.id,
+      clientMsgId: generateClientMsgId()
     });
-  }, [gameState?.roomId, user, safeEmit]);
+  }, [gameState?.roomId, user, safeEmit, generateClientMsgId]);
 
   const startNextRound = useCallback(() => {
   if (!gameState?.roomId) return;
-  safeEmit('nextRound', { roomId: gameState.roomId }); // 👈 this matches your backend
-}, [gameState?.roomId, safeEmit]);
+  safeEmit('nextRound', { roomId: gameState.roomId, clientMsgId: generateClientMsgId() });
+}, [gameState?.roomId, safeEmit, generateClientMsgId]);
 
 
   const endGame = useCallback(() => {
@@ -958,8 +1050,31 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 export const useGame = (): GameContextType => {
   const context = useContext(GameContext);
-  if (context === undefined) {
-    throw new Error('useGame must be used within a GameProvider');
+  if (context === undefined || context === null) {
+    console.error('useGame must be used within a GameProvider');
+    return {
+      gameState: null,
+      isHost: false,
+      connectionState: 'disconnected',
+      createRoom: async () => { throw new Error('Socket not ready'); },
+      joinRoom: async () => { throw new Error('Socket not ready'); },
+      leaveRoom: () => {},
+      discardRoom: () => {},
+      startJudgeSelection: () => {},
+      submitSentence: () => {},
+      selectMeme: () => {},
+      scoreMeme: () => {},
+      startNextRound: () => {},
+      endGame: () => {},
+      chatMessages: [],
+      sendChatMessage: () => {},
+      socket: null,
+      roomId: undefined,
+      isConnected: false,
+      reconnectionAttempts: 0,
+      maxReconnectionAttempts: 5,
+      safeEmit: () => false,
+    };
   }
   return context;
 };

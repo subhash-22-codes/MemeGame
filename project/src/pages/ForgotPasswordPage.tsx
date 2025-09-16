@@ -99,7 +99,7 @@ const ForgetPasswordPage: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, purpose: 'reset' }),
       });
 
       const data = await response.json();
@@ -152,10 +152,10 @@ const ForgetPasswordPage: React.FC = () => {
     setLoading(true);
     
     try {
-      const res = await fetch('/api/reset-password', {
+      const res = await fetch('/api/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, new_password: newPassword }),
+        body: JSON.stringify({ email, otp, purpose: 'reset', password: newPassword }),
       });
 
       const data = await res.json();
@@ -186,7 +186,7 @@ const ForgetPasswordPage: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, purpose: 'reset' }),
       });
 
       const data = await response.json();

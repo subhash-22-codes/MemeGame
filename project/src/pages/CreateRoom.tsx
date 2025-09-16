@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 const CreateRoom: React.FC = () => {
   const navigate = useNavigate();
-  const { createRoom, gameState } = useGame();
+  const { createRoom, gameState, connectionState } = useGame();
   const { user } = useAuth();
   
   const [totalRounds, setTotalRounds] = useState(10);
@@ -17,6 +17,11 @@ const CreateRoom: React.FC = () => {
   const handleCreateRoom = async () => {
     if (!user) {
       setError('You must be logged in to create a room');
+      return;
+    }
+
+    if (connectionState !== 'connected') {
+      setError('Connecting to server... please wait a moment and try again.');
       return;
     }
 
@@ -35,25 +40,8 @@ const CreateRoom: React.FC = () => {
       });
 
       console.log('[CREATE_ROOM] Room created successfully with ID:', roomId);
-
-      // Wait for GameContext to have the room state
-      const waitForRoomState = (attempts = 0) => {
-        if (attempts > 40) { // 2 seconds timeout (40 * 50ms)
-          console.error('[CREATE_ROOM] Timeout waiting for GameContext to update');
-          navigate(`/room/${roomId}`, { state: { isHost: true } });
-          return;
-        }
-        
-        if (gameState && gameState.roomId === roomId) {
-          console.log('[CREATE_ROOM] GameContext updated, navigating to room');
-          navigate(`/room/${roomId}`, { state: { isHost: true } });
-        } else {
-          console.log('[CREATE_ROOM] Waiting for GameContext to update...', attempts);
-          setTimeout(() => waitForRoomState(attempts + 1), 50);
-        }
-      };
-
-      waitForRoomState();
+      // Navigate immediately; GameContext will populate after socket event
+      navigate(`/room/${roomId}`, { state: { isHost: true } });
 
     } catch (error) {
       console.error('Failed to create room:', error);

@@ -521,8 +521,8 @@ const Game: React.FC = () => {
             {/* Final Leaderboard */}
             {isGameComplete && currentPhase === 'results' && (
               <FinalLeaderboard
-                players={gameState.players}
-                totalRounds={gameState.totalRounds}
+                players={gameState.finalResult?.players as unknown as Player[] || gameState.players}
+                totalRounds={gameState.finalResult?.totalRounds || gameState.totalRounds}
                 isHost={isHost}
                 onPlayAgain={handlePlayAgain}
                 onBackToLobby={handleBackToLobby}

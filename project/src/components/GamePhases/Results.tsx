@@ -50,7 +50,7 @@ const Results: React.FC<ResultsProps> = ({
               Round {roundNumber} Results
             </h1>
             <p className="text-[#131010]/70 font-mono">
-              {totalRounds - roundNumber} rounds remaining
+              {Math.max(0, (Number(totalRounds) || 0) - (Number(roundNumber) || 0))} rounds remaining
             </p>
           </>
         )}

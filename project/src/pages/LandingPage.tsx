@@ -167,7 +167,7 @@ const Input: React.FC<InputProps> = ({
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, login, register, loading } = useAuth();
+  const { isAuthenticated, login, register, loading, verifyOtp } = useAuth();
   
   const [showLogin, setShowLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -176,6 +176,8 @@ const LandingPage: React.FC = () => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [awaitingOtp, setAwaitingOtp] = useState(false);
+  const [otp, setOtp] = useState('');
   
   // Form validation
 const validateForm = () => {
@@ -213,17 +215,25 @@ const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
   setError('');
 
-  if (!validateForm()) return;
+  if (!awaitingOtp && !validateForm()) return;
 
   try {
-    if (showLogin) {
-      await login(email, password);
-    } else {
-      await register(username, email, password);
+    if (awaitingOtp) {
+      await verifyOtp({ email, otp, purpose: 'register', username, password });
+      toast.success('Authenticated successfully!');
+      navigate('/dashboard');
+      return;
     }
 
-    toast.success('Login successful!');
-    navigate('/dashboard');
+    if (showLogin) {
+      await login(email, password);
+      toast.success('Login successful!');
+      navigate('/dashboard');
+    } else {
+      await register(username, email, password);
+      setAwaitingOtp(true);
+      toast.success('Signup OTP sent to your email');
+    }
   } catch (err) {
     console.error('Authentication error:', err);
 
@@ -448,7 +458,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <AnimatePresence mode="wait">
-                    {!showLogin && (
+                    {!showLogin && !awaitingOtp && (
                       <motion.div
                         
                         initial={{ opacity: 0, height: 0 }}
@@ -471,18 +481,21 @@ const handleSubmit = async (e: React.FormEvent) => {
                     )}
                   </AnimatePresence>
                   
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    label="Email"
-                    placeholder="your.email@example.com"
-                    required
-                    icon={<Mail size={20} className="text-[#5F8B4C]" />}
-                    error={fieldErrors.email}
-                  />
+                  {!awaitingOtp && (
+                    <Input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      label="Email"
+                      placeholder="your.email@example.com"
+                      required
+                      icon={<Mail size={20} className="text-[#5F8B4C]" />}
+                      error={fieldErrors.email}
+                    />
+                  )}
                   
+                  {!awaitingOtp && (
                   <div>
                     <label 
                       htmlFor="password" 
@@ -550,15 +563,29 @@ const handleSubmit = async (e: React.FormEvent) => {
                       </div>
                     )}
                   </div>
+                  )}
+
+                  {awaitingOtp && (
+                    <Input
+                      id="otp"
+                      type="text"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value)}
+                      label="Enter OTP"
+                      placeholder="6-digit code"
+                      required
+                      icon={<Lock size={20} />}
+                    />
+                  )}
                   
                   <Button
                     type="submit"
                     variant="primary"
                     fullWidth
                     loading={loading}
-                    icon={showLogin ? <LogIn size={20} /> : <UserCircle2 size={20} />}
+                    icon={awaitingOtp ? <Lock size={20} /> : (showLogin ? <LogIn size={20} /> : <UserCircle2 size={20} />)}
                   >
-                    {showLogin ? 'Sign In' : 'Create Account'}
+                    {awaitingOtp ? 'Verify OTP' : (showLogin ? 'Sign In' : 'Send OTP')}
                   </Button>
                 </form>
                 
@@ -569,6 +596,8 @@ const handleSubmit = async (e: React.FormEvent) => {
                       setShowLogin(!showLogin);
                       setFieldErrors({});
                       setError('');
+                      setAwaitingOtp(false);
+                      setOtp('');
                     }}
                     className="text-[#5F8B4C] hover:text-[#4A6B3A] transition-colors font-['Courier_New']"
                     whileHover={{ scale: 1.05 }}
