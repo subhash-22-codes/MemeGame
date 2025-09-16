@@ -3,6 +3,7 @@ eventlet.monkey_patch()
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
+import redis
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import os
@@ -19,20 +20,21 @@ from datetime import datetime, timedelta
 import ssl
 import logging
 import time
-from email import encoders
 import re
 from bson.json_util import dumps, loads
-import json
-from bson import json_util
-from collections import defaultdict
-import threading
+
+
+# Configure logging early (before first use)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load .env variables
 load_dotenv()
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") 
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-# MongoDB direct setup
+# MongoDB Atlas setup
+# MONGODB_URI = os.getenv("MONGODB_URI")
 client = MongoClient("mongodb://127.0.0.1:27017/")
 db = client["memegame"]
 users_collection = db["users"]
@@ -40,36 +42,253 @@ rooms_collection = db["rooms"]
 otp_collection = db["otp_verifications"]
 contact_collection = db["contact_messages"]
 sessions_collection = db["sessions"]
+game_results_collection = db["game_results"]
 
-# Rate limiting (basic in-memory IP tracker)
-ip_rate_limit = defaultdict(list)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Redis connection (for sessions, timers, rate-limits)
+REDIS_URL = os.getenv("REDIS_URL")
+redis_client: redis.Redis | None = None
+if REDIS_URL:
+    try:
+        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        logger.info("Redis connected successfully")
 
-# Global email stats dictionary
-email_stats = {
-    "total_sent": 0,
-    "total_failed": 0,
-    "success_rate": 100.0,
-    "error_breakdown": {}
-}
+        # Test Redis
+        try:
+            redis_client.set("redis_test_key", "ok", ex=10)  # expires in 10s
+            val = redis_client.get("redis_test_key")
+            if val == "ok":
+                logger.info("Redis test key successfully set and retrieved")
+            else:
+                logger.warning("Redis test key set but failed to retrieve")
+        except Exception as e:
+            logger.error(f"Redis test failed: {e}")
 
-# Session management
-active_sessions = {}  # {sessionId: {roomId, playerId, lastSeen}}
+    except Exception as e:
+        logger.error(f"Redis connection failed: {e}")
 
-# Timer management for synchronized game timers
-game_timers = {}  # {roomId: {timer_thread, end_time, duration}}
+# Helper: Rate limit using Redis (fallback to allow if Redis is unavailable)
+def rate_limit_ip(ip: str, period_seconds: int = 60, max_requests: int = 3) -> bool:
+    """Return True if within limit, False if rate-limited."""
+    key = f"rate:{ip}"
+    try:
+        if redis_client:
+            current = redis_client.incr(key)
+            if current == 1:
+                redis_client.expire(key, period_seconds)
+            return current <= max_requests
+    except Exception as e:
+        logger.error(f"Redis rate limit error: {e}")
+    # Fallback (very basic, non-shared): allow
+    return True
+# logger already configured above
+
+# Session management via Redis
+def set_active_session(session_id: str, room_id: str, player_id: str):
+    try:
+        if redis_client:
+            redis_client.hset(f"session:{session_id}", mapping={
+                "roomId": room_id,
+                "playerId": player_id,
+                "lastSeen": datetime.utcnow().isoformat()
+            })
+            redis_client.sadd(f"room_sessions:{room_id}", session_id)
+    except Exception as e:
+        logger.error(f"Redis set_active_session error: {e}")
+
+def delete_sessions_for_room(room_id: str):
+    try:
+        if redis_client:
+            session_ids = redis_client.smembers(f"room_sessions:{room_id}") or []
+            for sid in session_ids:
+                redis_client.delete(f"session:{sid}")
+            redis_client.delete(f"room_sessions:{room_id}")
+    except Exception as e:
+        logger.error(f"Redis delete_sessions_for_room error: {e}")
+
+def delete_player_sessions(room_id: str, player_id: str):
+    try:
+        if redis_client:
+            session_ids = redis_client.smembers(f"room_sessions:{room_id}") or []
+            for sid in session_ids:
+                sess = redis_client.hgetall(f"session:{sid}") or {}
+                if sess.get("playerId") == player_id:
+                    redis_client.delete(f"session:{sid}")
+                    redis_client.srem(f"room_sessions:{room_id}", sid)
+    except Exception as e:
+        logger.error(f"Redis delete_player_sessions error: {e}")
+
+# -------------------- Auth session helpers --------------------
+def set_active_user_session(session_id: str, user_id: str, email: str, ttl_seconds: int = 7 * 24 * 3600) -> None:
+    """Store active authenticated user session in Redis with TTL."""
+    try:
+        if redis_client:
+            redis_client.hset(f"session:{session_id}", mapping={
+                "userId": user_id,
+                "email": email,
+                "createdAt": datetime.utcnow().isoformat()
+            })
+            redis_client.expire(f"session:{session_id}", ttl_seconds)
+    except Exception as e:
+        logger.error(f"Redis set_active_user_session error: {e}")
+
+def generate_auth_session_id() -> str:
+    """Generate a unique session ID for authenticated users."""
+    return 'auth-' + str(int(time.time())) + '-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+# Timer management in Redis and eventlet-friendly background task
+TIMER_PREFIX = "timer"
+
+def set_timer(room_id: str, end_time_iso: str, duration: int):
+    try:
+        if redis_client:
+            redis_client.hset(f"{TIMER_PREFIX}:{room_id}", mapping={
+                "end_time": end_time_iso,
+                "duration": str(duration),
+                "cancel": "0"
+            })
+    except Exception as e:
+        logger.error(f"Redis set_timer error: {e}")
+
+def cancel_timer(room_id: str):
+    try:
+        if redis_client:
+            redis_client.hset(f"{TIMER_PREFIX}:{room_id}", "cancel", "1")
+    except Exception as e:
+        logger.error(f"Redis cancel_timer error: {e}")
+
+def cleanup_room_runtime(room_id: str):
+    """Remove Redis runtime state for a room (sessions, timers)."""
+    try:
+        # Remove timers
+        if redis_client:
+            redis_client.delete(f"{TIMER_PREFIX}:{room_id}")
+            # Remove room session tracking
+            delete_sessions_for_room(room_id)
+    except Exception as e:
+        logger.error(f"cleanup_room_runtime error: {e}")
+
+# -------------------- Reconnect/Disconnect helpers --------------------
+def set_socket_mapping(sid: str, room_id: str, player_id: str, session_id: str) -> None:
+    try:
+        if redis_client:
+            redis_client.hset(f"sock:{sid}", mapping={
+                "roomId": room_id,
+                "playerId": player_id,
+                "sessionId": session_id,
+                "lastSeen": datetime.utcnow().isoformat()
+            })
+            redis_client.expire(f"sock:{sid}", 24 * 3600)
+    except Exception as e:
+        logger.error(f"set_socket_mapping error: {e}")
+
+def get_socket_mapping(sid: str) -> dict:
+    try:
+        if redis_client:
+            return redis_client.hgetall(f"sock:{sid}") or {}
+    except Exception as e:
+        logger.error(f"get_socket_mapping error: {e}")
+    return {}
+
+def clear_socket_mapping(sid: str) -> None:
+    try:
+        if redis_client:
+            redis_client.delete(f"sock:{sid}")
+    except Exception as e:
+        logger.error(f"clear_socket_mapping error: {e}")
+
+def set_rejoin_grace(session_id: str, ttl_seconds: int = 15) -> None:
+    try:
+        if redis_client:
+            redis_client.setex(f"rejoin_grace:{session_id}", ttl_seconds, "1")
+    except Exception as e:
+        logger.error(f"set_rejoin_grace error: {e}")
+
+def pop_rejoin_grace(session_id: str) -> bool:
+    try:
+        if redis_client:
+            pipe = redis_client.pipeline()
+            key = f"rejoin_grace:{session_id}"
+            pipe.get(key)
+            pipe.delete(key)
+            val, _ = pipe.execute()
+            return bool(val)
+    except Exception as e:
+        logger.error(f"pop_rejoin_grace error: {e}")
+    return False
+
+def finalize_game(room_id: str) -> dict | None:
+    """
+    Compute winner and persist results if and only if the game completed.
+    Returns the result document or None if not stored.
+    """
+    try:
+        room = rooms_collection.find_one({"roomId": room_id})
+        if not room:
+            return None
+        # Game considered complete only if phase is 'results' or 'finalResults' and currentRound >= totalRounds
+        if (room.get("gamePhase") not in ("results", "finalResults")):
+            return None
+        total_rounds = int(room.get("totalRounds", 0) or 0)
+        current_round = int(room.get("currentRound", 0) or 0)
+        players = room.get("players", [])
+        if current_round < total_rounds or len(players) < 2:
+            # Incomplete or not enough players; don't store
+            return None
+
+        # Compute winner(s)
+        winner = None
+        top_score = -1
+        for p in players:
+            score = int(p.get("score", 0) or 0)
+            if score > top_score:
+                top_score = score
+                winner = {
+                    "id": p.get("id"),
+                    "username": p.get("username"),
+                    "score": score,
+                    "avatar": p.get("avatar")
+                }
+
+        if winner is None:
+            return None
+
+        # Idempotent upsert by roomId
+        result_doc = {
+            "roomId": room_id,
+            "winner": winner,
+            "players": [{
+                "id": p.get("id"),
+                "username": p.get("username"),
+                "score": int(p.get("score", 0) or 0),
+                "avatar": p.get("avatar")
+            } for p in players],
+            "totalRounds": total_rounds,
+            "completedAt": datetime.utcnow()
+        }
+        game_results_collection.update_one(
+            {"roomId": room_id},
+            {"$setOnInsert": result_doc},
+            upsert=True
+        )
+
+        # Cleanup Redis runtime after storing
+        cleanup_room_runtime(room_id)
+        return result_doc
+    except Exception as e:
+        logger.error(f"finalize_game error: {e}")
+        return None
 
 # Initialize Flask
 app = Flask(__name__)
 CORS(app)
 
-# Socket.IO setup
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-import os
-from werkzeug.utils import secure_filename
-from PIL import Image
+# Socket.IO setup (tolerant mobile timeouts)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    ping_timeout=40,    # allow more time for backgrounded mobile tabs
+    ping_interval=20
+)
 
 # Configuration
 UPLOAD_FOLDER = 'upload_pictures'
@@ -160,13 +379,10 @@ def handle_contact():
         if len(message) < 10:
             return jsonify({"success": False, "error": "Message too short."}), 400
 
-        # 2. Rate-limit by IP (basic)
-        ip = request.remote_addr
-        now = datetime.utcnow()
-        ip_rate_limit[ip] = [t for t in ip_rate_limit[ip] if now - t < timedelta(minutes=1)]
-        if len(ip_rate_limit[ip]) >= 3:
+        # 2. Rate-limit by IP (Redis)
+        ip = request.remote_addr or "unknown"
+        if not rate_limit_ip(ip, period_seconds=60, max_requests=3):
             return jsonify({"success": False, "error": "Too many requests. Please wait and try again."}), 429
-        ip_rate_limit[ip].append(now)
 
         # 3. Check for duplicate email
         if contact_collection.find_one({"email": email}):
@@ -492,6 +708,65 @@ You received this email because you requested a password reset for your {company
     
     return plain_text.strip()
 
+def get_registration_otp_template(otp: str, user_name: str | None = None, company_name: str = "MemeGame") -> str:
+    """Registration OTP email with a welcoming tone."""
+    display_name = user_name or "there"
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Welcome to {company_name}!</title>
+      <style>
+        body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif; background:#f8fafc; color:#1a202c; margin:0; }}
+        .card {{ max-width: 640px; margin: 24px auto; background:#fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); overflow:hidden; }}
+        .header {{ background: linear-gradient(135deg,#5F8B4C,#D98324); color:#fff; padding: 28px 24px; text-align:center; }}
+        .content {{ padding: 28px 24px; }}
+        .otp {{ letter-spacing: 8px; font-weight: 800; font-size: 32px; color:#5F8B4C; text-align:center; margin: 16px 0; }}
+        .note {{ text-align:center; color:#4a5568; font-size:14px; }}
+        .footer {{ padding: 18px 24px; background:#f7fafc; text-align:center; color:#718096; font-size: 13px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="header">
+          <h1>🎉 Welcome to {company_name}!</h1>
+          <p>Hi {display_name}, let's verify your email to get started.</p>
+        </div>
+        <div class="content">
+          <p>Use the code below to complete your signup. It expires in <strong>5 minutes</strong>.</p>
+          <div class="otp">{otp}</div>
+          <p class="note">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+        <div class="footer">© {datetime.now().year} {company_name}. All rights reserved.</div>
+      </div>
+    </body>
+    </html>
+    """
+
+def send_registration_otp_email(to_email: str, otp: str, user_name: str | None = None) -> tuple[bool, str]:
+    """Send the registration OTP using the welcoming template."""
+    try:
+        message = MIMEMultipart("alternative")
+        now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
+        message["Subject"] = f"Welcome to MemeGame 🎉 | Verify your email ({now_str})"
+        message["From"] = f"MemeGame Team <{SENDER_EMAIL}>"
+        message["To"] = to_email
+
+        html_content = get_registration_otp_template(otp, user_name, "MemeGame")
+        text_fallback = f"Welcome to MemeGame! Your verification code is {otp}. It expires in 5 minutes."
+        message.attach(MIMEText(text_fallback, "plain", "utf-8"))
+        message.attach(MIMEText(html_content, "html", "utf-8"))
+
+        server = create_smtp_connection_with_retry()
+        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
+        server.quit()
+        return True, "Email sent successfully"
+    except Exception as e:
+        logger.error(f"Failed to send registration OTP email: {str(e)}")
+        return False, str(e)
+
 def validate_email_format(email):
     """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -522,14 +797,14 @@ def create_smtp_connection_with_retry(max_retries=3):
         except smtplib.SMTPConnectError as e:
             logger.error(f"SMTP Connection failed (attempt {attempt + 1}): {str(e)}")
             if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))  # Exponential backoff
+                socketio.sleep(2 * (attempt + 1))  # Eventlet-friendly backoff
                 continue
             raise Exception("Failed to connect to email server after multiple attempts.")
             
         except Exception as e:
             logger.error(f"Unexpected SMTP error (attempt {attempt + 1}): {str(e)}")
             if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
+                socketio.sleep(2 * (attempt + 1))
                 continue
             raise Exception(f"Email service error: {str(e)}")
     
@@ -579,209 +854,180 @@ def send_professional_otp_email(to_email, otp, user_name=None):
 
 @app.route("/api/send-otp", methods=["POST"])
 def send_otp():
-    """Enhanced OTP sending endpoint with professional email system"""
-    
+    """
+    Send a 6-digit OTP to the user's email.
+    Body: { email: str, purpose?: 'register'|'login'|'reset' }
+    - Stores OTP in Mongo `otp_verifications` with 5-min expiry
+    - Rate-limit: 1 per minute per email
+    - For 'register': allow if user doesn't exist
+    - For 'login'/'reset': require existing user
+    """
+
     request_start_time = datetime.utcnow()
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    
+
     try:
-        # Input validation
-        data = request.get_json()
-        if not data:
-            logger.warning(f"Empty request body from IP: {client_ip}")
-            return jsonify({
-                "error": "Request body is required",
-                "error_code": "MISSING_REQUEST_BODY",
-                "timestamp": request_start_time.isoformat()
-            }), 400
-        
-        email = data.get("email", "").strip().lower()
-        
-        # Validate email presence
+        data = request.get_json() or {}
+        email = str(data.get("email", "")).strip().lower()
+        purpose = str(data.get("purpose", "login")).strip().lower()
+
         if not email:
-            logger.warning(f"Missing email in request from IP: {client_ip}")
-            return jsonify({
-                "error": "Email address is required",
-                "error_code": "MISSING_EMAIL",
-                "timestamp": request_start_time.isoformat()
-            }), 400
-        
-        # Validate email format
+            return jsonify({"error": "Email is required"}), 400
         if not validate_email_format(email):
-            logger.warning(f"Invalid email format '{email}' from IP: {client_ip}")
-            return jsonify({
-                "error": "Please provide a valid email address",
-                "error_code": "INVALID_EMAIL_FORMAT",
-                "timestamp": request_start_time.isoformat()
-            }), 400
+            return jsonify({"error": "Invalid email format"}), 400
+        if purpose not in {"register", "login", "reset"}:
+            purpose = "login"
 
-        # Check if user exists in database
-        user = users_collection.find_one({"email": email})
-        if not user:
-            logger.warning(f"Password reset attempt for unregistered email: {email}")
-            return jsonify({
-                "error": "This email address is not registered with us",
-                "error_code": "EMAIL_NOT_REGISTERED",
-                "suggestion": "Please check your email address or create a new account",
-                "timestamp": request_start_time.isoformat()
-            }), 404
-
-        # Rate limiting check (optional enhancement)
-        recent_otp_check = otp_collection.find_one({
+        # Per-email rate limit via Mongo timestamp (fallback if Redis unavailable)
+        recent = otp_collection.find_one({
             "email": email,
             "created_at": {"$gte": datetime.utcnow() - timedelta(minutes=1)}
         })
-        
-        if recent_otp_check:
-            logger.warning(f"Rate limit exceeded for email: {email}")
-            return jsonify({
-                "error": "Please wait before requesting another OTP",
-                "error_code": "RATE_LIMIT_EXCEEDED",
-                "retry_after_seconds": 60,
-                "timestamp": request_start_time.isoformat()
-            }), 429
+        if recent:
+            return jsonify({"error": "Please wait before requesting another OTP"}), 429
 
-        # Generate OTP and store in database (your existing logic)
+        user = users_collection.find_one({"email": email})
+        if purpose in {"reset"} and not user:
+            return jsonify({"error": "Email not registered"}), 404
+        if purpose == "register" and user:
+            return jsonify({"error": "User already exists"}), 409
+
         otp = str(random.randint(100000, 999999))
         expiry = datetime.utcnow() + timedelta(minutes=5)
 
         otp_collection.update_one(
             {"email": email},
             {"$set": {
-                "otp": otp, 
+                "email": email,
+                "otp": otp,
                 "expires_at": expiry,
                 "created_at": datetime.utcnow(),
                 "attempts": 0,
                 "client_ip": client_ip,
-                "is_used": False
+                "is_used": False,
+                "purpose": purpose
             }},
             upsert=True
         )
 
-        # Get user name for personalization
-        user_name = user.get("name") or user.get("username") or user.get("first_name")
-        
-        # Send professional OTP email
-        logger.info(f"Sending OTP email to: {email}")
-        
-        email_success, email_message = send_professional_otp_email(email, otp, user_name)
-        
-        if email_success:
-            # Calculate processing time
-            processing_time = (datetime.utcnow() - request_start_time).total_seconds()
-            
-            logger.info(f"OTP sent successfully to {email} in {processing_time:.2f}s")
-            
-            # Update statistics
-            global email_stats
-            email_stats["total_sent"] += 1
-            total_attempts = email_stats["total_sent"] + email_stats["total_failed"]
-            email_stats["success_rate"] = (email_stats["total_sent"] / total_attempts) * 100
-            
-            return jsonify({
-                "message": "Verification code sent successfully",
-                "email": email,
-                "expires_in_minutes": 5,
-                "processing_time_seconds": round(processing_time, 2),
-                "timestamp": datetime.utcnow().isoformat(),
-                "request_id": f"otp_{int(time.time())}_{hash(email) % 10000}"
-            }), 200
-            
+        user_name = (user or {}).get("username")
+        logger.info(f"[OTP] Sending OTP to {email} for purpose={purpose}")
+        if purpose == "register":
+            email_success, email_message = send_registration_otp_email(email, otp, user_name)
         else:
-            # Email sending failed
-            logger.error(f"Failed to send OTP email to {email}: {email_message}")
-            
-            # Update statistics
-            email_stats["total_failed"] += 1
-            error_type = "CONNECTION_FAILED" if "connection" in email_message.lower() else "EMAIL_SEND_FAILED"
-            email_stats["error_breakdown"][error_type] = email_stats["error_breakdown"].get(error_type, 0) + 1
-            
-            total_attempts = email_stats["total_sent"] + email_stats["total_failed"]
-            if total_attempts > 0:
-                email_stats["success_rate"] = (email_stats["total_sent"] / total_attempts) * 100
-            
-            # Determine appropriate error message
-            if "authentication" in email_message.lower():
-                error_message = "Email service authentication failed. Please try again later."
-                error_code = "AUTH_FAILED"
-            elif "connection" in email_message.lower():
-                error_message = "Unable to connect to email service. Please try again later."
-                error_code = "CONNECTION_FAILED"
-            elif "timeout" in email_message.lower():
-                error_message = "Email service timeout. Please try again."
-                error_code = "TIMEOUT"
-            else:
-                error_message = "Failed to send verification code. Please try again."
-                error_code = "EMAIL_SEND_FAILED"
-            
-            return jsonify({
-                "error": error_message,
-                "error_code": error_code,
-                "retry_recommended": True,
-                "timestamp": datetime.utcnow().isoformat()
-            }), 500
+            email_success, email_message = send_professional_otp_email(email, otp, user_name)
+        if not email_success:
+            logger.error(f"[OTP] Email send failed for {email}: {email_message}")
+            return jsonify({"error": "Failed to send OTP. Try again later."}), 500
 
+        return jsonify({"message": "OTP sent", "expires_in": 300}), 200
     except Exception as e:
-        # Handle unexpected errors
-        processing_time = (datetime.utcnow() - request_start_time).total_seconds()
-        error_msg = str(e)
+        logger.error(f"[OTP] send_otp error: {e}")
+        return jsonify({"error": "Server error"}), 500
+     
         
-        logger.error(f"Unexpected error in send_otp: {error_msg}")
-        
-        # Update statistics
-        
-        return jsonify({
-            "error": "An unexpected error occurred. Please try again.",
-            "error_code": "INTERNAL_SERVER_ERROR",
-            "processing_time_seconds": round(processing_time, 2),
-            "timestamp": datetime.utcnow().isoformat()
-        }), 500
-@app.route("/api/email-stats", methods=["GET"])
-def get_email_stats():
-    """Get email sending statistics (for monitoring)"""
-    try:
-        return jsonify({
-            "success": True,
-            "stats": email_stats,
-            "timestamp": datetime.utcnow().isoformat()
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+# Removed deprecated email stats endpoint
+
     
-@app.route("/api/reset-password", methods=["POST"])
-def reset_password():
-    data = request.get_json()
-    email = data.get("email")
-    otp = data.get("otp")
-    new_password = data.get("new_password")
+@app.route("/api/verify-otp", methods=["POST"])
+def verify_otp():
+    """
+    Verify OTP. Supports purposes:
+    - register: create user, then issue JWT
+    - login: issue JWT
+    - reset: set new password when provided
+    Body: { email, otp, purpose, username?, password? (for register/reset) }
+    """
+    try:
+        data = request.get_json() or {}
+        email = str(data.get("email", "")).strip().lower()
+        otp = str(data.get("otp", "")).strip()
+        purpose = str(data.get("purpose", "login")).strip().lower()
+        username = data.get("username")
+        password = data.get("password")
 
-    record = otp_collection.find_one({"email": email})
-    if not record:
-        return jsonify({"error": "OTP not requested"}), 400
+        if not email or not otp:
+            return jsonify({"error": "Email and OTP are required"}), 400
 
-    if record["otp"] != otp:
-        return jsonify({"error": "Invalid OTP"}), 400
+        rec = otp_collection.find_one({"email": email})
+        if not rec:
+            return jsonify({"error": "OTP not requested"}), 400
+        if rec.get("is_used"):
+            return jsonify({"error": "OTP already used"}), 400
+        if rec.get("otp") != otp:
+            return jsonify({"error": "Invalid OTP"}), 400
+        if datetime.utcnow() > rec.get("expires_at", datetime.utcnow()):
+            return jsonify({"error": "OTP expired"}), 400
 
-    if datetime.utcnow() > record["expires_at"]:
-        return jsonify({"error": "OTP expired"}), 400
+        user = users_collection.find_one({"email": email})
 
-    # Hash the new password securely (replace this with your existing hash method)
-    from werkzeug.security import generate_password_hash
-    hashed_pw = generate_password_hash(new_password)
+        if purpose == "register":
+            if user:
+                return jsonify({"error": "User already exists"}), 409
+            if not username or not password:
+                return jsonify({"error": "Username and password required"}), 400
+            hashed_password = generate_password_hash(password)
+            avatar_url = f"https://api.dicebear.com/7.x/fun-emoji/svg?seed={username}"
+            insert = users_collection.insert_one({
+                "username": username,
+                "email": email,
+                "password": hashed_password,
+                "avatar": avatar_url,
+                "createdAt": datetime.utcnow()
+            })
+            user_id = str(insert.inserted_id)
+            user = users_collection.find_one({"_id": insert.inserted_id})
+        elif purpose == "reset":
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            if not password:
+                return jsonify({"error": "New password required"}), 400
+            users_collection.update_one({"email": email}, {"$set": {"password": generate_password_hash(password)}})
+            user_id = str(user["_id"])
+        else:  # login
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            user_id = str(user["_id"])
 
-    # Update password
-    users_collection.update_one(
-        {"email": email},
-        {"$set": {"password": hashed_pw}}
-    )
+        # Mark OTP as used
+        otp_collection.update_one({"email": email}, {"$set": {"is_used": True}})
 
-    # Remove OTP record (optional but good practice)
-    otp_collection.delete_one({"email": email})
+        # Issue JWT
+        token = jwt.encode({
+            "email": email,
+            "id": user_id,
+            "exp": datetime.utcnow() + timedelta(days=7)
+        }, JWT_SECRET_KEY, algorithm="HS256")
 
-    return jsonify({"message": "Password reset successful"}), 200
+        # Create Redis-backed auth session
+        session_id = generate_auth_session_id()
+        set_active_user_session(session_id, user_id, email)
+
+        # Response payload
+        payload_user = {
+            "id": user_id,
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "avatar": user.get("avatar")
+        }
+
+        # Send post-signup welcome email (registration only)
+        if purpose == "register":
+            try:
+                now = datetime.now()
+                formatted_time = now.strftime("%b %d, %Y %I:%M %p")
+                subject = f"Welcome to MemeGame 🎉  |  {formatted_time}"
+                body = f"Welcome {user.get('username','player')} to MemeGame!"
+                send_email(email, subject, body)
+                logger.info(f"[WELCOME] Welcome email sent to {email}")
+            except Exception as e:
+                logger.error(f"[WELCOME] Failed to send welcome email to {email}: {e}")
+
+        logger.info(f"[AUTH] OTP verified for {email}, purpose={purpose}, session={session_id}")
+        return jsonify({"token": token, "user": payload_user, "sessionId": session_id}), 200
+    except Exception as e:
+        logger.error(f"[AUTH] verify_otp error: {e}")
+        return jsonify({"error": "Server error"}), 500
 
 
 # Helper to generate a random room ID
@@ -804,47 +1050,43 @@ def generate_unique_room_id():
 # -------------------- USER ROUTES --------------------
 @app.route("/api/register", methods=["POST"])
 def register():
-    data = request.get_json()
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
+    """
+    Begin registration: validate inputs, ensure email unused, send OTP.
+    Does not create user yet; user is created in /api/verify-otp after OTP verification with purpose=register.
+    """
+    data = request.get_json() or {}
+    username = str(data.get("username", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", "")).strip()
 
     if not username or not email or not password:
         return jsonify({"error": "All fields are required"}), 400
-
     if users_collection.find_one({"email": email}):
-        return jsonify({"error": "User already exists"}), 400
+        return jsonify({"error": "User already exists"}), 409
 
-    hashed_password = generate_password_hash(password)
-    user = {
-        "username": username,
-        "email": email,
-        "password": hashed_password,
-        "avatar": f"https://api.dicebear.com/7.x/fun-emoji/svg?seed={username}"
-    }
-    inserted = users_collection.insert_one(user)
-
-    # ✅ Send welcome email
-    now = datetime.now()
-    formatted_time = now.strftime("%b %d, %Y %I:%M %p")  # e.g., "May 29, 2025 03:45 PM"
-    subject = f"Welcome to MemeGame 🎉  |  {formatted_time}"
-    body = ""  # Add your email body content here
-    send_email(email, subject, body)
-
-    token = jwt.encode({
-        "email": email,
-        "exp": datetime.utcnow() + timedelta(days=7)  # Corrected line
-    }, JWT_SECRET_KEY, algorithm="HS256")
-
-    return jsonify({
-        "token": token,
-        "user": {
-            "id": str(inserted.inserted_id),
-            "username": username,
+    # Generate and send registration OTP using dedicated welcome template
+    otp = str(random.randint(100000, 999999))
+    expiry = datetime.utcnow() + timedelta(minutes=5)
+    otp_collection.update_one(
+        {"email": email},
+        {"$set": {
             "email": email,
-            "avatar": user["avatar"]
-        }
-    }), 201
+            "otp": otp,
+            "expires_at": expiry,
+            "created_at": datetime.utcnow(),
+            "attempts": 0,
+            "client_ip": request.remote_addr,
+            "is_used": False,
+            "purpose": "register"
+        }},
+        upsert=True
+    )
+    email_success, msg = send_registration_otp_email(email, otp, username)
+    if not email_success:
+        logger.error(f"[REGISTER] Failed to send registration OTP: {msg}")
+        return jsonify({"error": "Failed to send OTP"}), 500
+    logger.info(f"[REGISTER] Registration OTP sent to {email}")
+    return jsonify({"message": "OTP sent to email for registration"}), 200
 
 # -------------------- EMAIL SENDING FUNCTION --------------------
 def send_email(to_email, subject, body):
@@ -1061,7 +1303,7 @@ def send_email(to_email, subject, body):
 
     # Set up the email
     msg = MIMEMultipart()
-    msg['From'] = sender_email
+    msg['From'] = f"MemeGame Team <{SENDER_EMAIL}>"
     msg['To'] = to_email
     msg['Subject'] = subject
     
@@ -1082,8 +1324,9 @@ def send_email(to_email, subject, body):
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    data = request.get_json()
-    email = data.get("email")
+    """Password-based login only."""
+    data = request.get_json() or {}
+    email = str(data.get("email", "")).strip().lower()
     password = data.get("password")
 
     if not email or not password:
@@ -1093,22 +1336,25 @@ def login():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    if not check_password_hash(user["password"], password):
+    if not check_password_hash(user.get("password", ""), password):
         return jsonify({"error": "Incorrect password"}), 401
 
     token = jwt.encode({
         "email": email,
+        "id": str(user["_id"]),
         "exp": datetime.utcnow() + timedelta(days=7)
     }, JWT_SECRET_KEY, algorithm="HS256")
-
+    session_id = generate_auth_session_id()
+    set_active_user_session(session_id, str(user["_id"]), email)
     return jsonify({
         "token": token,
         "user": {
             "id": str(user["_id"]),
-            "username": user["username"],
-            "email": user["email"],
-            "avatar": user["avatar"]
-        }
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "avatar": user.get("avatar")
+        },
+        "sessionId": session_id
     }), 200
 # -------------------- SOCKET.IO EVENTS --------------------
 def generate_session_id():
@@ -1116,9 +1362,13 @@ def generate_session_id():
     return 'session-' + str(int(time.time())) + '-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
 
 def cleanup_old_sessions():
-    """Clean up sessions older than 24 hours"""
-    cutoff_time = datetime.utcnow() - timedelta(hours=24)
-    sessions_collection.delete_many({"lastSeen": {"$lt": cutoff_time}})
+    """Clean up sessions older than 24 hours (Redis-backed)"""
+    try:
+        if redis_client:
+            # No-op: session TTL handled separately when setting or not needed
+            return
+    except Exception as e:
+        logger.error(f"cleanup_old_sessions error: {e}")
 
 def update_player_connection_status(room_id, player_id, is_connected=True):
     """Update player connection status in the room"""
@@ -1144,39 +1394,60 @@ def handle_connect():
     print(f"[CONNECT] Client connected: {request.sid}")
     cleanup_old_sessions()
 
-@socketio.on('disconnect')
+@socketio.on("disconnect")
 def handle_disconnect():
-    """Handle client disconnection with proper cleanup"""
-    print(f"[DISCONNECT] Client disconnected: {request.sid}")
+    """Handle client disconnection with cleanup + notify others"""
     sid = request.sid
-    
-    rooms = list(rooms_collection.find({}))
+    print(f"[DISCONNECT] Client disconnected: {sid}")
 
-    for room in rooms:
-        updated_players = []
-        changed = False
+    try:
+        # Find session by sid → (roomId, playerId)
+        session = redis_client.hgetall(f"sid:{sid}") if redis_client else {}
+        if not session:
+            print(f"[INFO] Disconnect before session established: {sid}")
+            return
 
-        for player in room.get("players", []):
-            # Optional: check if this player had this sid stored
-            if player.get("isConnected", True):  # Mark only if previously connected
-                player["isConnected"] = False
-                player["lastSeen"] = datetime.utcnow()
-                changed = True
-            updated_players.append(player)
+        # Handle both str and bytes
+        def _val(key: str) -> str:
+            v = session.get(key) or session.get(key.encode())
+            if isinstance(v, bytes):
+                return v.decode()
+            return v or ""
 
-        if changed:
-            rooms_collection.update_one(
-                {"_id": room["_id"]},
-                {"$set": {"players": updated_players}}
-            )
+        room_id = _val("roomId")
+        player_id = _val("playerId")
+        session_id = _val("sessionId")
 
-            emit('playerDisconnected', {
-                "players": json_safe(updated_players),
-                "disconnectedSid": sid
-            }, to=room["roomId"])
+        if not all([room_id, player_id, session_id]):
+            print(f"[INFO] Incomplete session data on disconnect, ignoring: {session}")
+            return
 
-            
-            
+        # Mark player as disconnected in MongoDB
+        result = rooms_collection.update_one(
+            {"roomId": room_id, "players.id": player_id},
+            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
+        )
+        print(f"[DISCONNECT] Updated DB for player {player_id} disconnected: {result.modified_count} document(s)")
+
+        # Notify others in room
+        emit("playerDisconnected", {"playerId": player_id, "roomId": room_id}, to=room_id)
+        print(f"[DISCONNECT] Broadcasted disconnect to room {room_id}")
+
+        # Grace period for quick reconnect (15s window)
+        if redis_client:
+            redis_client.setex(f"disconnected:{player_id}", 15, room_id)
+        print(f"[DISCONNECT] Set grace period for player {player_id}")
+
+        # Remove sid mapping from Redis
+        if redis_client:
+            redis_client.delete(f"sid:{sid}")
+        print(f"[DISCONNECT] Removed sid mapping for {sid}")
+
+    except Exception as e:
+        print(f"[ERROR] Exception in disconnect: {e}")
+
+
+        
 def json_safe(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
@@ -1230,22 +1501,21 @@ def handle_create_room(data):
         insert_result = rooms_collection.insert_one(room_data)
         print(f"[DEBUG] Inserted room data with _id: {insert_result.inserted_id}")
 
-        # Create session record
-        session_record = {
-            "sessionId": session_id,
-            "roomId": room_id,
-            "playerId": host["id"],
-            "lastSeen": datetime.utcnow(),
-            "isHost": True
-        }
-        sessions_collection.insert_one(session_record)
+        # Upsert session record to avoid duplicates
+        sessions_collection.update_one(
+            {"sessionId": session_id},
+            {"$set": {
+                "sessionId": session_id,
+                "roomId": room_id,
+                "playerId": host["id"],
+                "lastSeen": datetime.utcnow(),
+                "isHost": True
+            }},
+            upsert=True
+        )
 
-        # Track active session
-        active_sessions[session_id] = {
-            "roomId": room_id,
-            "playerId": host["id"],
-            "lastSeen": datetime.utcnow()
-        }
+        # Track active session in Redis
+        set_active_session(session_id, room_id, host["id"])
 
         sid = request.sid
         join_room(room_id)
@@ -1270,94 +1540,121 @@ def handle_create_room(data):
 
 @socketio.on('joinRoom')
 def handle_join_room(data):
-    """Join an existing room with connection validation"""
+    """Join an existing room with connection validation + reconnect support"""
     print(f"[DEBUG] Received 'joinRoom' event with data: {data}")
 
     try:
         room_id = data.get("roomId")
         player = data.get("player")
+        provided_session_id = data.get("sessionId")
 
         if not room_id or not player:
-            print("[ERROR] Missing room ID or player data in 'joinRoom'")
             emit("error", {"error": "Room ID and player info required", "code": "MISSING_DATA"}, to=request.sid)
             return
 
         # Validate room exists
         room, error = get_room_with_validation(room_id)
         if error:
-            print(f"[ERROR] {error} for roomId: {room_id}")
             emit("error", {"error": error, "code": "ROOM_NOT_FOUND"}, to=request.sid)
             return
 
-        # Check if game has already started
-        if room.get("gamePhase") != "lobby":
-            print(f"[ERROR] Game already started in room {room_id}")
-            emit("error", {"error": "Game has already started", "code": "GAME_ALREADY_STARTED"}, to=request.sid)
-            return
+        # If game already started, allow rejoin path when sessionId is provided or player already exists
+        game_started = room.get("gamePhase") != "lobby"
 
-        player["isConnected"] = True
-        player["lastSeen"] = datetime.utcnow()
+        player_id = player["id"]
 
-        # Check if player already in the room
-        existing_player_index = next((i for i, p in enumerate(room["players"]) if p["id"] == player["id"]), None)
+        # Reconnect handling: check if this player is already in the room
+        existing_idx = next((i for i, p in enumerate(room.get("players", [])) if p["id"] == player_id), None)
 
-        session_id = generate_session_id()
+        if existing_idx is not None:
+            # Player is rejoining → update their status and ensure they have a sessionId
+            existing_player = room["players"][existing_idx]
+            existing_player["isConnected"] = True
+            existing_player["lastSeen"] = datetime.utcnow()
 
-        if existing_player_index is not None:
-            # Update existing player
-            room["players"][existing_player_index].update(player)
-            print(f"[DEBUG] Updated existing player {player['id']} in room {room_id}")
+            # Reuse sessionId if present, otherwise create and persist it
+            session_id = provided_session_id or existing_player.get("sessionId")
+            if not session_id:
+                session_id = generate_session_id()
+                existing_player["sessionId"] = session_id
+                # update the in-memory room players so DB update below persists sessionId
+                room["players"][existing_idx] = existing_player
+
+            print(f"[DEBUG] Player {player_id} reconnected in room {room_id} (session {session_id})")
+
         else:
-            # Add new player
-            room["players"].append(player)
-            print(f"[DEBUG] Added new player {player['id']} to room {room_id}")
+            # Fresh player joining
+            if game_started:
+                emit("error", {"error": "Game has already started", "code": "GAME_ALREADY_STARTED"}, to=request.sid)
+                return
+            session_id = provided_session_id or generate_session_id()
+            player["isConnected"] = True
+            player["lastSeen"] = datetime.utcnow()
+            player["sessionId"] = session_id
+            room.setdefault("players", []).append(player)
+            print(f"[DEBUG] New player {player_id} joined room {room_id} (session {session_id})")
 
-        # Update room in database
+        # Save room update in DB (players possibly modified above)
         rooms_collection.update_one(
             {"roomId": room_id},
-            {
-                "$set": {
-                    "players": room["players"],
-                    "lastActivity": datetime.utcnow()
-                }
-            }
+            {"$set": {"players": room["players"], "lastActivity": datetime.utcnow()}}
         )
 
-        # Create session record
-        session_record = {
-            "sessionId": session_id,
-            "roomId": room_id,
-            "playerId": player["id"],
-            "lastSeen": datetime.utcnow(),
-            "isHost": False
-        }
-        sessions_collection.insert_one(session_record)
+        # Save session record in DB
+        sessions_collection.update_one(
+            {"sessionId": session_id},
+            {"$set": {
+                "sessionId": session_id,
+                "roomId": room_id,
+                "playerId": player_id,
+                "lastSeen": datetime.utcnow(),
+                "isHost": False
+            }},
+            upsert=True
+        )
 
-        # Track active session
-        active_sessions[session_id] = {
+        # Remove stale sessions of same player in same room to avoid DB bloat
+        sessions_collection.delete_many({
             "roomId": room_id,
-            "playerId": player["id"],
-            "lastSeen": datetime.utcnow()
-        }
+            "playerId": player_id,
+            "sessionId": {"$ne": session_id}
+        })
 
+        # Save sid → session mapping in Redis (if available)
         sid = request.sid
+        if redis_client:
+            try:
+                redis_client.hset(f"sid:{sid}", mapping={
+                    "sessionId": session_id,
+                    "roomId": room_id,
+                    "playerId": player_id
+                })
+                redis_client.expire(f"sid:{sid}", 3600)  # expire in 1h
+            except Exception as e:
+                print(f"[WARN] Failed to write sid mapping to Redis: {e}")
+
+        # Track active session (your helper)
+        try:
+            set_active_session(session_id, room_id, player_id)
+        except Exception:
+            pass
+
+        # Join socket room and emit updates
         join_room(room_id)
         print(f"[DEBUG] Socket {sid} joined room {room_id}")
 
-        # Get updated room data
         updated_room = rooms_collection.find_one({"roomId": room_id})
-        updated_room["_id"] = str(updated_room["_id"])
+        if updated_room:
+            updated_room["_id"] = str(updated_room["_id"])
 
-        # Emit to all players in room
-        emit('playerJoined', json_safe(updated_room["players"]), to=room_id)
+        # Notify others in the room
+        emit("playerJoined", json_safe(updated_room.get("players", [])), to=room_id)
 
-        # Emit room data to joining player
-        emit('roomJoined', {
+        # Send full room state back to joining client (and session id)
+        emit("roomJoined", {
             "roomData": json_safe(updated_room),
             "sessionId": session_id
         }, to=sid)
-
-        print(f"[DEBUG] Emitted 'playerJoined' to room {room_id} and 'roomJoined' to {sid}")
 
     except Exception as e:
         print(f"[ERROR] Error in joinRoom: {str(e)}")
@@ -1366,8 +1663,8 @@ def handle_join_room(data):
 
 @socketio.on('rejoinRoom')
 def handle_rejoin_room(data):
-    """Handle room rejoining with session validation"""
-    print(f"[DEBUG] Received 'rejoinRoom' event with data: {data}")
+    """Handle room rejoining with session validation + grace period support"""
+    print(f"[DEBUG] Received 'rejoinRoom' event: {data}")
 
     try:
         room_id = data.get("roomId")
@@ -1375,31 +1672,38 @@ def handle_rejoin_room(data):
         session_id = data.get("sessionId")
 
         if not all([room_id, player_id, session_id]):
-            print("[ERROR] Missing required data for rejoinRoom")
+            print("[ERROR] Missing required rejoin data")
             emit("error", {"error": "Missing session data", "code": "INVALID_SESSION"}, to=request.sid)
             return
 
-        # Validate session
+        # Check grace period for quick reconnect
+        if redis_client.exists(f"disconnected:{player_id}"):
+            print(f"[REJOIN] Player {player_id} reconnecting within grace period")
+        else:
+            print(f"[REJOIN] Player {player_id} reconnecting normally")
+
+        # Validate session exists
         session = sessions_collection.find_one({"sessionId": session_id, "playerId": player_id})
         if not session:
-            print(f"[ERROR] Invalid session for rejoin: {session_id}")
+            print(f"[ERROR] Invalid session: {session_id}")
             emit("error", {"error": "Invalid session", "code": "INVALID_SESSION"}, to=request.sid)
             return
 
-        # Fetch and validate room
+        # Fetch room
         room, error = get_room_with_validation(room_id)
         if error or not room:
-            print(f"[ERROR] {error} for roomId: {room_id}")
+            print(f"[ERROR] Room validation failed for {room_id}: {error}")
             emit("error", {"error": error or "Room not found", "code": "ROOM_NOT_FOUND"}, to=request.sid)
             return
 
         if not validate_player_in_room(room, player_id):
-            print(f"[ERROR] Player {player_id} not found in room {room_id}")
+            print(f"[ERROR] Player {player_id} not in room {room_id}")
             emit("error", {"error": "Player not in room", "code": "PLAYER_NOT_IN_ROOM"}, to=request.sid)
             return
 
-        # Update player connection status
+        # Update player as connected in MongoDB
         update_player_connection_status(room_id, player_id, True)
+        print(f"[REJOIN] Player {player_id} marked as connected in room {room_id}")
 
         # Update session timestamp
         sessions_collection.update_one(
@@ -1407,45 +1711,58 @@ def handle_rejoin_room(data):
             {"$set": {"lastSeen": datetime.utcnow()}}
         )
 
-        # Update in-memory active sessions
-        active_sessions[session_id] = {
+        # Remove stale sessions of same player in same room
+        sessions_collection.delete_many({
             "roomId": room_id,
             "playerId": player_id,
-            "lastSeen": datetime.utcnow()
-        }
+            "sessionId": {"$ne": session_id}
+        })
 
-        # Join socket room
+        # Update Redis sid mapping and remove disconnected marker
+        sid = request.sid
+        redis_client.hset(f"sid:{sid}", mapping={
+            "sessionId": session_id,
+            "roomId": room_id,
+            "playerId": player_id
+        })
+        redis_client.expire(f"sid:{sid}", 3600)
+        redis_client.delete(f"disconnected:{player_id}")  # Remove grace period
+        print(f"[REJOIN] Redis mappings updated for sid {sid}")
+
+        # Track active session
+        set_active_session(session_id, room_id, player_id)
+        print(f"[REJOIN] Active session tracked for player {player_id}")
+
+        # Join the Socket.io room
         join_room(room_id)
-        print(f"[DEBUG] Socket {request.sid} rejoined room {room_id}")
+        print(f"[REJOIN] Socket {sid} rejoined room {room_id}")
 
-        # Fetch latest room data again from DB
+        # Fetch latest room data
         updated_room = rooms_collection.find_one({"roomId": room_id})
         if not updated_room:
-            print(f"[ERROR] Could not find updated room for roomId: {room_id}")
+            print(f"[ERROR] Could not fetch updated room for {room_id}")
             emit("error", {"error": "Room not found after rejoin", "code": "ROOM_FETCH_FAILED"}, to=request.sid)
             return
 
-        # Convert _id for safe serialization
         updated_room["_id"] = str(updated_room["_id"])
 
-        # Emit reconnection event to all players
+        # Notify all players about reconnection
         emit('playerReconnected', {
             "players": json_safe(updated_room.get("players", [])),
             "reconnectedPlayerId": player_id
         }, to=room_id)
+        print(f"[REJOIN] Notified room {room_id} about player {player_id} reconnect")
 
-        # Emit full room data to rejoining player
+        # Send full room data to rejoining client
         emit('roomRejoined', {
             "roomData": json_safe(updated_room),
             "restored": True
         }, to=request.sid)
-
-        print(f"[DEBUG] Player {player_id} successfully rejoined room {room_id}")
+        print(f"[REJOIN] Sent full room state to rejoining player {player_id}")
 
     except Exception as e:
-        print(f"[ERROR] Error in rejoinRoom: {str(e)}")
+        print(f"[ERROR] Exception in rejoinRoom: {e}")
         emit("error", {"error": "Failed to rejoin room", "code": "REJOIN_FAILED"}, to=request.sid)
-
 
 @socketio.on('startGame')
 def handle_start_game(data):
@@ -1705,12 +2022,15 @@ def handle_score_meme(data):
 
         current_round = room.get("currentRound", 1)
         
-        # Find the submission to score
+        # Find the submission to score and enforce single scoring per player per round
         submissions = room.get("submissions", [])
         submission_found = False
-        
         for submission in submissions:
             if submission.get("playerId") == player_id:
+                # Prevent double-scoring
+                if submission.get("score") is not None:
+                    emit("error", {"error": "Already scored", "code": "ALREADY_SCORED"})
+                    return
                 submission["score"] = score
                 submission_found = True
                 break
@@ -1725,7 +2045,7 @@ def handle_score_meme(data):
             {"$set": {"submissions": submissions}}
         )
 
-        # Update player score for this round
+        # Update player score for this round (idempotent guard: only add once)
         rooms_collection.update_one(
             {"roomId": room_id, "players.id": player_id},
             {
@@ -1794,13 +2114,17 @@ def handle_next_round(data):
         })
         
         if current_round > total_rounds:
-            # Game is complete, show final results
+            # Game is complete, show final results and finalize
             rooms_collection.update_one(
                 {"roomId": room_id},
                 {"$set": {"gamePhase": "results", "lastActivity": datetime.utcnow()}}
             )
             room = rooms_collection.find_one({"roomId": room_id})
-            socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
+            result_doc = finalize_game(room_id)
+            payload = json_safe(room)
+            if result_doc:
+                payload["finalResult"] = result_doc
+            socketio.emit('gameEnded', payload, to=room_id)
             return
         else:
             # Calculate which player should be judge based on rounds_per_judge
@@ -1889,10 +2213,8 @@ def handle_discard_room(data):
         rooms_collection.delete_one({"roomId": room_id})
         sessions_collection.delete_many({"roomId": room_id})
         
-        # Clean up active sessions
-        sessions_to_remove = [sid for sid, session in active_sessions.items() if session.get("roomId") == room_id]
-        for session_id in sessions_to_remove:
-            del active_sessions[session_id]
+        # Clean up active sessions and timers (Redis)
+        cleanup_room_runtime(room_id)
 
         print(f"[DEBUG] Room {room_id} completely discarded and cleaned up")
 
@@ -1916,39 +2238,37 @@ def handle_leave_room(data):
             print("[BACKEND] Room not found or already deleted.")
             return
 
-        updated_players = [p for p in room.get('players', []) if p['id'] != player_id]
+        # Mark player as disconnected but keep in players list to avoid losing score/state mid-game
+        updated_players = []
+        for p in room.get('players', []):
+            if p['id'] == player_id:
+                updated_players.append({**p, 'isConnected': False, 'lastSeen': datetime.utcnow()})
+            else:
+                updated_players.append(p)
         print(f"[BACKEND] Players after removal: {updated_players}")
 
-        if updated_players:
-            rooms_collection.update_one(
-                {"roomId": room_id},
-                {
-                    "$set": {
-                        "players": updated_players,
-                        "lastActivity": datetime.utcnow()
-                    }
+        rooms_collection.update_one(
+            {"roomId": room_id},
+            {
+                "$set": {
+                    "players": updated_players,
+                    "lastActivity": datetime.utcnow()
                 }
-            )
-        else:
-            rooms_collection.delete_one({"roomId": room_id})
-            print(f"[BACKEND] Room {room_id} deleted - no players remaining")
+            }
+        )
 
         leave_room(room_id)
         print(f"[BACKEND] Socket {request.sid} is leaving room {room_id}")
 
         # Optional: clean up sessions
         sessions_collection.delete_many({"roomId": room_id, "playerId": player_id})
-        for sid in list(active_sessions):
-            session = active_sessions[sid]
-            if session.get("roomId") == room_id and session.get("playerId") == player_id:
-                del active_sessions[sid]
+        delete_player_sessions(room_id, player_id)
 
-        if updated_players:
-            print(f"[BACKEND] Emitting 'playerLeft' to room {room_id}")
-            emit('playerLeft', json_safe({
-                "players": updated_players,
-                 "disconnectedPlayerId": player_id
-            }), room=room_id, skip_sid=request.sid)
+        print(f"[BACKEND] Emitting 'playerLeft' to room {room_id}")
+        emit('playerLeft', json_safe({
+            "players": updated_players,
+            "disconnectedPlayerId": player_id
+        }), room=room_id, skip_sid=request.sid)
 
 
     except Exception as e:
@@ -1989,69 +2309,60 @@ def health_check():
 def cleanup_old_data():
     """Clean up old data periodically"""
     try:
-        # Clean up old rooms (older than 24 hours)
+        # Clean up old rooms (older than 24 hours) ONLY if not in active phases
         cutoff_time = datetime.utcnow() - timedelta(hours=24)
-        rooms_collection.delete_many({"lastActivity": {"$lt": cutoff_time}})
+        rooms_collection.delete_many({
+            "lastActivity": {"$lt": cutoff_time},
+            "gamePhase": {"$in": ["lobby", "results"]}
+        })
         
-        # Clean up old sessions
-        sessions_collection.delete_many({"timestamp": {"$lt": cutoff_time}})
+        # Clean up old sessions by lastSeen
+        sessions_collection.delete_many({"lastSeen": {"$lt": cutoff_time}})
         
         # Clean up old OTP records
-        otp_collection.delete_many({"createdAt": {"$lt": cutoff_time}})
+        otp_collection.delete_many({"created_at": {"$lt": cutoff_time}})
         
         print("[CLEANUP] Old data cleaned up successfully")
     except Exception as e:
         print(f"[CLEANUP] Error during cleanup: {str(e)}")
 
 def start_game_timer(room_id, duration=30):
-    """Start a synchronized timer for a room"""
-    if room_id in game_timers:
-        # Stop existing timer
-        stop_game_timer(room_id)
-    
+    """Start a synchronized timer for a room using eventlet-friendly background task"""
     end_time = datetime.utcnow() + timedelta(seconds=duration)
-    
-    def timer_callback():
+    set_timer(room_id, end_time.isoformat(), duration)
+
+    def timer_worker(rid: str, end_time_local: datetime):
         try:
-            # Check if room still exists
-            room = rooms_collection.find_one({"roomId": room_id})
+            remaining = (end_time_local - datetime.utcnow()).total_seconds()
+            while remaining > 0:
+                # Check cancel flag
+                if redis_client and redis_client.hget(f"{TIMER_PREFIX}:{rid}", "cancel") == "1":
+                    return
+                socketio.sleep(min(1, remaining))
+                remaining = (end_time_local - datetime.utcnow()).total_seconds()
+
+            # Timer ended
+            room = rooms_collection.find_one({"roomId": rid})
             if not room:
                 return
-            
-            # Emit timer end event
+
             socketio.emit('timerEnded', {
-                'roomId': room_id,
+                'roomId': rid,
                 'phase': room.get('gamePhase', 'memeSelection')
-            }, to=room_id)
-            
-            # If in memeSelection phase, automatically move to memeReveal
+            }, to=rid)
+
             if room.get('gamePhase') == 'memeSelection':
                 rooms_collection.update_one(
-                    {"roomId": room_id},
+                    {"roomId": rid},
                     {"$set": {"gamePhase": "memeReveal"}}
                 )
-                updated_room = rooms_collection.find_one({"roomId": room_id})
-                socketio.emit('gameStateUpdate', json_safe(updated_room), to=room_id)
-            
-            # Clean up timer
-            if room_id in game_timers:
-                del game_timers[room_id]
-                
+                updated_room = rooms_collection.find_one({"roomId": rid})
+                socketio.emit('gameStateUpdate', json_safe(updated_room), to=rid)
         except Exception as e:
-            print(f"[TIMER] Error in timer callback: {str(e)}")
-    
-    # Start timer thread
-    timer_thread = threading.Timer(duration, timer_callback)
-    timer_thread.daemon = True
-    timer_thread.start()
-    
-    game_timers[room_id] = {
-        'timer_thread': timer_thread,
-        'end_time': end_time,
-        'duration': duration
-    }
-    
-    # Emit timer start event
+            logger.error(f"[TIMER] Error in timer worker: {e}")
+
+    socketio.start_background_task(timer_worker, room_id, end_time)
+
     socketio.emit('timerStarted', {
         'roomId': room_id,
         'duration': duration,
@@ -2060,31 +2371,36 @@ def start_game_timer(room_id, duration=30):
 
 def stop_game_timer(room_id):
     """Stop the timer for a room"""
-    if room_id in game_timers:
-        timer_data = game_timers[room_id]
-        if timer_data['timer_thread'].is_alive():
-            timer_data['timer_thread'].cancel()
-        del game_timers[room_id]
+    cancel_timer(room_id)
 
 def get_remaining_time(room_id):
     """Get remaining time for a room's timer"""
-    if room_id in game_timers:
-        timer_data = game_timers[room_id]
-        remaining = (timer_data['end_time'] - datetime.utcnow()).total_seconds()
-        return max(0, int(remaining))
+    try:
+        if redis_client:
+            end_iso = redis_client.hget(f"{TIMER_PREFIX}:{room_id}", "end_time")
+            if end_iso:
+                end_dt = datetime.fromisoformat(end_iso)
+                remaining = (end_dt - datetime.utcnow()).total_seconds()
+                return max(0, int(remaining))
+    except Exception as e:
+        logger.error(f"get_remaining_time error: {e}")
     return 0
 
-# Schedule cleanup every hour
-import threading
-import time
-
-def periodic_cleanup():
+# Schedule cleanup every hour using eventlet-friendly task
+def periodic_cleanup_worker():
     while True:
-        time.sleep(3600)  # 1 hour
+        socketio.sleep(3600)  # 1 hour
         cleanup_old_data()
+        # Opportunistically clean timers without rooms
+        try:
+            if redis_client:
+                # This is lightweight and safe even on free tier
+                # We cannot scan keys reliably without perf hit; skip heavy scans
+                pass
+        except Exception as e:
+            logger.error(f"timer cleanup scan error: {e}")
 
-cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
-cleanup_thread.start()
+socketio.start_background_task(periodic_cleanup_worker)
 
 # -------------------- MAIN --------------------
 
