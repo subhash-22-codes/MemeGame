@@ -22,7 +22,9 @@ import logging
 import time
 import re
 from bson.json_util import dumps, loads
-
+from data.memes import MEMES
+import requests
+import random
 
 # Configure logging early (before first use)
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +35,7 @@ load_dotenv()
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") 
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
 # MongoDB Atlas setup
 # MONGODB_URI = os.getenv("MONGODB_URI")
 client = MongoClient("mongodb://127.0.0.1:27017/")
@@ -47,22 +50,20 @@ game_results_collection = db["game_results"]
 # Redis connection (for sessions, timers, rate-limits)
 REDIS_URL = os.getenv("REDIS_URL")
 redis_client: redis.Redis | None = None
+local_socket_store = {} 
+local_rejoin_store = {}
+
+# UPDATE this block
 if REDIS_URL:
     try:
-        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        # Added timeouts so DNS issues don't lag your app
+        redis_client = redis.from_url(
+            REDIS_URL, 
+            decode_responses=True, 
+            socket_timeout=2, 
+            socket_connect_timeout=2
+        )
         logger.info("Redis connected successfully")
-
-        # Test Redis
-        try:
-            redis_client.set("redis_test_key", "ok", ex=10)  # expires in 10s
-            val = redis_client.get("redis_test_key")
-            if val == "ok":
-                logger.info("Redis test key successfully set and retrieved")
-            else:
-                logger.warning("Redis test key set but failed to retrieve")
-        except Exception as e:
-            logger.error(f"Redis test failed: {e}")
-
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
@@ -117,24 +118,6 @@ def delete_player_sessions(room_id: str, player_id: str):
     except Exception as e:
         logger.error(f"Redis delete_player_sessions error: {e}")
 
-# -------------------- Auth session helpers --------------------
-def set_active_user_session(session_id: str, user_id: str, email: str, ttl_seconds: int = 7 * 24 * 3600) -> None:
-    """Store active authenticated user session in Redis with TTL."""
-    try:
-        if redis_client:
-            redis_client.hset(f"session:{session_id}", mapping={
-                "userId": user_id,
-                "email": email,
-                "createdAt": datetime.utcnow().isoformat()
-            })
-            redis_client.expire(f"session:{session_id}", ttl_seconds)
-    except Exception as e:
-        logger.error(f"Redis set_active_user_session error: {e}")
-
-def generate_auth_session_id() -> str:
-    """Generate a unique session ID for authenticated users."""
-    return 'auth-' + str(int(time.time())) + '-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-
 # Timer management in Redis and eventlet-friendly background task
 TIMER_PREFIX = "timer"
 
@@ -157,51 +140,73 @@ def cancel_timer(room_id: str):
         logger.error(f"Redis cancel_timer error: {e}")
 
 def cleanup_room_runtime(room_id: str):
-    """Remove Redis runtime state for a room (sessions, timers)."""
+    """Purge all temporary data for a room."""
     try:
-        # Remove timers
+        # 1. Stop Redis timers
         if redis_client:
             redis_client.delete(f"{TIMER_PREFIX}:{room_id}")
-            # Remove room session tracking
+
+        # 2. Clear Local Socket Store (The mapping we fixed earlier)
+        global local_socket_store
+        keys_to_remove = [sid for sid, data in local_socket_store.items() if data.get("roomId") == room_id]
+        for sid in keys_to_remove:
+            if sid in local_socket_store:
+                del local_socket_store[sid]
+
+        # 3. Final delete from active sessions
+        if redis_client:
             delete_sessions_for_room(room_id)
+
+        logger.info(f"[CLEANUP] Successfully purged room {room_id} from memory.")
     except Exception as e:
         logger.error(f"cleanup_room_runtime error: {e}")
+        
+def stop_room_active_logic(room_id: str):
+    """Stop timers and active play, but keep the data for a few minutes."""
+    if redis_client:
+        redis_client.delete(f"{TIMER_PREFIX}:{room_id}")
+    logger.info(f"Active logic stopped for {room_id}. Entering grace period.")
 
-# -------------------- Reconnect/Disconnect helpers --------------------
+
 def set_socket_mapping(sid: str, room_id: str, player_id: str, session_id: str) -> None:
+    data = {
+        "roomId": room_id,
+        "playerId": player_id,
+        "sessionId": session_id,
+        "lastSeen": datetime.utcnow().isoformat()
+    }
     try:
         if redis_client:
-            redis_client.hset(f"sock:{sid}", mapping={
-                "roomId": room_id,
-                "playerId": player_id,
-                "sessionId": session_id,
-                "lastSeen": datetime.utcnow().isoformat()
-            })
+            redis_client.hset(f"sock:{sid}", mapping=data)
             redis_client.expire(f"sock:{sid}", 24 * 3600)
+            return
     except Exception as e:
         logger.error(f"set_socket_mapping error: {e}")
+    
+    # Fallback to local RAM
+    local_socket_store[f"sock:{sid}"] = data
 
 def get_socket_mapping(sid: str) -> dict:
     try:
         if redis_client:
-            return redis_client.hgetall(f"sock:{sid}") or {}
+            res = redis_client.hgetall(f"sock:{sid}")
+            if res: return res
     except Exception as e:
         logger.error(f"get_socket_mapping error: {e}")
-    return {}
-
-def clear_socket_mapping(sid: str) -> None:
-    try:
-        if redis_client:
-            redis_client.delete(f"sock:{sid}")
-    except Exception as e:
-        logger.error(f"clear_socket_mapping error: {e}")
+    
+    # Fallback to local RAM
+    return local_socket_store.get(f"sock:{sid}", {})
 
 def set_rejoin_grace(session_id: str, ttl_seconds: int = 15) -> None:
     try:
         if redis_client:
             redis_client.setex(f"rejoin_grace:{session_id}", ttl_seconds, "1")
+            return
     except Exception as e:
         logger.error(f"set_rejoin_grace error: {e}")
+    
+    # Fallback to local RAM
+    local_rejoin_store[session_id] = True
 
 def pop_rejoin_grace(session_id: str) -> bool:
     try:
@@ -211,73 +216,84 @@ def pop_rejoin_grace(session_id: str) -> bool:
             pipe.get(key)
             pipe.delete(key)
             val, _ = pipe.execute()
-            return bool(val)
+            if val: return True
     except Exception as e:
         logger.error(f"pop_rejoin_grace error: {e}")
-    return False
+    
+    # Fallback to local RAM
+    return local_rejoin_store.pop(session_id, False)
 
+def clear_socket_mapping(sid: str) -> None:
+    try:
+        if redis_client:
+            redis_client.delete(f"sock:{sid}")
+    except Exception as e:
+        logger.error(f"clear_socket_mapping error: {e}")
+    
+    # ALWAYS clear the local backup too
+    local_socket_store.pop(f"sock:{sid}", None)
+    
 def finalize_game(room_id: str) -> dict | None:
-    """
-    Compute winner and persist results if and only if the game completed.
-    Returns the result document or None if not stored.
-    """
     try:
         room = rooms_collection.find_one({"roomId": room_id})
-        if not room:
+        if not room: return None
+
+        if room.get("gamePhase") not in ("results", "finalResults", "memeReveal"):
+            logger.warning(f"[FINALIZE_SKIP] Room {room_id} is in phase {room.get('gamePhase')}")
             return None
-        # Game considered complete only if phase is 'results' or 'finalResults' and currentRound >= totalRounds
-        if (room.get("gamePhase") not in ("results", "finalResults")):
-            return None
-        total_rounds = int(room.get("totalRounds", 0) or 0)
-        current_round = int(room.get("currentRound", 0) or 0)
+        
+        total_rounds = int(room.get("totalRounds", 0))
+        current_round = int(room.get("currentRound", 0))
+        
+        if current_round < total_rounds: return None
+
         players = room.get("players", [])
-        if current_round < total_rounds or len(players) < 2:
-            # Incomplete or not enough players; don't store
-            return None
+        
+        top_score = max(int(p.get("score", 0)) for p in players) if players else 0
+        winners = [
+            {
+                "id": p.get("id"),
+                "username": p.get("username"),
+                "score": int(p.get("score", 0)),
+                "avatar": p.get("avatar")
+            } for p in players if int(p.get("score", 0)) == top_score
+        ]
 
-        # Compute winner(s)
-        winner = None
-        top_score = -1
-        for p in players:
-            score = int(p.get("score", 0) or 0)
-            if score > top_score:
-                top_score = score
-                winner = {
-                    "id": p.get("id"),
-                    "username": p.get("username"),
-                    "score": score,
-                    "avatar": p.get("avatar")
-                }
+        host_data = room.get("host", {})
+        host_id = host_data.get("id") if host_data else None
 
-        if winner is None:
-            return None
-
-        # Idempotent upsert by roomId
         result_doc = {
             "roomId": room_id,
-            "winner": winner,
+            "host": host_data,
+            "allJudges": [host_id] if host_id else [],
+            "winners": winners,
             "players": [{
                 "id": p.get("id"),
                 "username": p.get("username"),
-                "score": int(p.get("score", 0) or 0),
+                "score": int(p.get("score", 0)),
                 "avatar": p.get("avatar")
             } for p in players],
             "totalRounds": total_rounds,
-            "completedAt": datetime.utcnow()
+            "createdAt": datetime.utcnow()
         }
+
         game_results_collection.update_one(
             {"roomId": room_id},
-            {"$setOnInsert": result_doc},
+            {"$set": result_doc}, 
             upsert=True
         )
 
-        # Cleanup Redis runtime after storing
-        cleanup_room_runtime(room_id)
+        rooms_collection.update_one(
+            {"roomId": room_id},
+            {"$set": {"status": "archived", "cleanupAt": datetime.utcnow() + timedelta(minutes=5)}}
+        )
+
         return result_doc
     except Exception as e:
         logger.error(f"finalize_game error: {e}")
         return None
-
+    
+    
 # Initialize Flask
 app = Flask(__name__)
 CORS(app)
@@ -927,8 +943,6 @@ def send_otp():
      
         
 # Removed deprecated email stats endpoint
-
-    
 @app.route("/api/verify-otp", methods=["POST"])
 def verify_otp():
     """
@@ -982,7 +996,10 @@ def verify_otp():
                 return jsonify({"error": "User not found"}), 404
             if not password:
                 return jsonify({"error": "New password required"}), 400
-            users_collection.update_one({"email": email}, {"$set": {"password": generate_password_hash(password)}})
+            users_collection.update_one(
+                {"email": email},
+                {"$set": {"password": generate_password_hash(password)}}
+            )
             user_id = str(user["_id"])
         else:  # login
             if not user:
@@ -992,16 +1009,12 @@ def verify_otp():
         # Mark OTP as used
         otp_collection.update_one({"email": email}, {"$set": {"is_used": True}})
 
-        # Issue JWT
+        # Issue JWT (valid for 7 days)
         token = jwt.encode({
             "email": email,
             "id": user_id,
             "exp": datetime.utcnow() + timedelta(days=7)
         }, JWT_SECRET_KEY, algorithm="HS256")
-
-        # Create Redis-backed auth session
-        session_id = generate_auth_session_id()
-        set_active_user_session(session_id, user_id, email)
 
         # Response payload
         payload_user = {
@@ -1023,11 +1036,13 @@ def verify_otp():
             except Exception as e:
                 logger.error(f"[WELCOME] Failed to send welcome email to {email}: {e}")
 
-        logger.info(f"[AUTH] OTP verified for {email}, purpose={purpose}, session={session_id}")
-        return jsonify({"token": token, "user": payload_user, "sessionId": session_id}), 200
+        logger.info(f"[AUTH] OTP verified for {email}, purpose={purpose}")
+        return jsonify({"token": token, "user": payload_user}), 200
+
     except Exception as e:
         logger.error(f"[AUTH] verify_otp error: {e}")
         return jsonify({"error": "Server error"}), 500
+
 
 
 # Helper to generate a random room ID
@@ -1321,41 +1336,118 @@ def send_email(to_email, subject, body):
     except Exception as e:
         print(f"❌ Error sending welcome email: {e}")
         return False
+    
+@app.route('/api/user/dashboard-stats', methods=['GET'])
+def get_dashboard_stats():
+    user_id = request.args.get('userId') 
+    if not user_id:
+        return jsonify({"success": False, "message": "User ID required"}), 400
 
+    try:
+        # 1. Total Games (Any game where they were in the room)
+        total_games = game_results_collection.count_documents({"players.id": user_id})
+        
+        # 2. Games Hosted = Times as Judge (Since host is permanent judge)
+        games_hosted = game_results_collection.count_documents({"host.id": user_id})
+        
+        # 3. Games Won
+        total_wins = game_results_collection.count_documents({"winners.id": user_id})
+        
+        games_as_player = total_games - games_hosted
+        win_rate_val = round((total_wins / games_as_player * 100), 1) if games_as_player > 0 else 0
+        win_rate_str = f"{win_rate_val}%"
+
+        pipeline = [
+            {"$match": {"players.id": user_id}},
+            {"$unwind": "$players"},
+            {"$match": {"players.id": user_id}},
+            {"$sort": {"players.score": -1}}, # Get highest score first
+            {"$limit": 1}, # Only take the top 1
+            {"$project": {"maxScore": "$players.score", "totalRounds": "$totalRounds"}}
+        ]
+        score_result = list(game_results_collection.aggregate(pipeline))
+        
+        if score_result:
+            best_score = f"{score_result[0].get('maxScore', 0)}"
+            best_score_trend = f"in {score_result[0].get('totalRounds', 0)} Rounds"
+        else:
+            best_score = "0"
+            best_score_trend = "0 Rounds"
+
+        # 6. Recent History (Unchanged)
+        history_cursor = game_results_collection.find(
+            {"players.id": user_id}
+        ).sort("createdAt", -1).limit(5)
+        
+        history = []
+        for doc in history_cursor:
+            my_player_data = next((p for p in doc['players'] if p['id'] == user_id), {})
+            history.append({
+                "id": str(doc["_id"]),
+                "roomId": doc.get("roomId"),
+                "score": my_player_data.get('score', 0),
+                "isWinner": any(w['id'] == user_id for w in doc.get('winners', [])),
+                "wasHost": doc.get('host', {}).get('id') == user_id,
+                "date": doc.get("createdAt").strftime("%b %d") if doc.get("createdAt") else "Recent"
+            })
+
+        return jsonify({
+            "success": True,
+            "stats": {
+                "totalGames": total_games,
+                "gamesHosted": games_hosted,
+                "totalWins": total_wins,
+                "winRate": win_rate_str,
+                "bestScoreDisplay": best_score,
+                "bestScoreTrend": best_score_trend
+            },
+            "history": history
+        })
+
+    except Exception as e:
+        logger.error(f"Dashboard Stats Error: {e}")
+        return jsonify({"success": False, "message": "Error fetching stats"}), 500
+    
 @app.route("/api/login", methods=["POST"])
 def login():
     """Password-based login only."""
-    data = request.get_json() or {}
-    email = str(data.get("email", "")).strip().lower()
-    password = data.get("password")
+    try:
+        data = request.get_json() or {}
+        email = str(data.get("email", "")).strip().lower()
+        password = data.get("password")
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
 
-    user = users_collection.find_one({"email": email})
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+        user = users_collection.find_one({"email": email})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
-    if not check_password_hash(user.get("password", ""), password):
-        return jsonify({"error": "Incorrect password"}), 401
+        if not check_password_hash(user.get("password", ""), password):
+            return jsonify({"error": "Incorrect password"}), 401
 
-    token = jwt.encode({
-        "email": email,
-        "id": str(user["_id"]),
-        "exp": datetime.utcnow() + timedelta(days=7)
-    }, JWT_SECRET_KEY, algorithm="HS256")
-    session_id = generate_auth_session_id()
-    set_active_user_session(session_id, str(user["_id"]), email)
-    return jsonify({
-        "token": token,
-        "user": {
+        # Issue JWT (valid for 7 days)
+        token = jwt.encode({
+            "email": email,
             "id": str(user["_id"]),
-            "username": user.get("username"),
-            "email": user.get("email"),
-            "avatar": user.get("avatar")
-        },
-        "sessionId": session_id
-    }), 200
+            "exp": datetime.utcnow() + timedelta(days=7)
+        }, JWT_SECRET_KEY, algorithm="HS256")
+
+        # Response payload
+        return jsonify({
+            "token": token,
+            "user": {
+                "id": str(user["_id"]),
+                "username": user.get("username"),
+                "email": user.get("email"),
+                "avatar": user.get("avatar")
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[AUTH] login error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
 # -------------------- SOCKET.IO EVENTS --------------------
 def generate_session_id():
     """Generate a unique session ID"""
@@ -1388,66 +1480,7 @@ def validate_player_in_room(room, player_id):
     """Validate that player is in the room"""
     return any(p["id"] == player_id for p in room.get("players", []))
 
-@socketio.on('connect')
-def handle_connect():
-    """Handle client connection"""
-    print(f"[CONNECT] Client connected: {request.sid}")
-    cleanup_old_sessions()
 
-@socketio.on("disconnect")
-def handle_disconnect():
-    """Handle client disconnection with cleanup + notify others"""
-    sid = request.sid
-    print(f"[DISCONNECT] Client disconnected: {sid}")
-
-    try:
-        # Find session by sid → (roomId, playerId)
-        session = redis_client.hgetall(f"sid:{sid}") if redis_client else {}
-        if not session:
-            print(f"[INFO] Disconnect before session established: {sid}")
-            return
-
-        # Handle both str and bytes
-        def _val(key: str) -> str:
-            v = session.get(key) or session.get(key.encode())
-            if isinstance(v, bytes):
-                return v.decode()
-            return v or ""
-
-        room_id = _val("roomId")
-        player_id = _val("playerId")
-        session_id = _val("sessionId")
-
-        if not all([room_id, player_id, session_id]):
-            print(f"[INFO] Incomplete session data on disconnect, ignoring: {session}")
-            return
-
-        # Mark player as disconnected in MongoDB
-        result = rooms_collection.update_one(
-            {"roomId": room_id, "players.id": player_id},
-            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
-        )
-        print(f"[DISCONNECT] Updated DB for player {player_id} disconnected: {result.modified_count} document(s)")
-
-        # Notify others in room
-        emit("playerDisconnected", {"playerId": player_id, "roomId": room_id}, to=room_id)
-        print(f"[DISCONNECT] Broadcasted disconnect to room {room_id}")
-
-        # Grace period for quick reconnect (15s window)
-        if redis_client:
-            redis_client.setex(f"disconnected:{player_id}", 15, room_id)
-        print(f"[DISCONNECT] Set grace period for player {player_id}")
-
-        # Remove sid mapping from Redis
-        if redis_client:
-            redis_client.delete(f"sid:{sid}")
-        print(f"[DISCONNECT] Removed sid mapping for {sid}")
-
-    except Exception as e:
-        print(f"[ERROR] Exception in disconnect: {e}")
-
-
-        
 def json_safe(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
@@ -1459,36 +1492,277 @@ def json_safe(obj):
         return {key: json_safe(value) for key, value in obj.items()}
     return obj
 
-@socketio.on('createRoom')
-def handle_create_room(data):
-    """Create a new game room with enhanced session management"""
-    print(f"[DEBUG] Received 'createRoom' event with data: {data}")
-
+def _get_player_and_room(sid: str, room_id: str) -> tuple[dict | None, dict | None, str | None]:
+    """
+    Utility to securely get the player and room from a socket ID.
+    Returns: (player, room, error_message)
+    """
     try:
-        rounds = data.get("rounds")
-        rounds_per_judge = data.get("roundsPerJudge")
-        host = data.get("host")
+        # 1. Get player_id from the socket ID
+        mapping = get_socket_mapping(sid) # This returns a dict
         
-        if not rounds or not rounds_per_judge or not host:
-            print("[ERROR] Missing required room data in 'createRoom'")
-            emit("error", {"error": "Missing required room data", "code": "MISSING_DATA"})
+        # ⭐️ FIX: Handle bytes from Redis (the master bug)
+        def _val(key: str) -> str:
+            v = mapping.get(key) or mapping.get(key.encode())
+            if isinstance(v, bytes):
+                return v.decode()
+            return v or ""
+
+        player_id = _val("playerId")
+        
+        if not player_id:
+            logger.error(f"[AUTH_ERROR] No player_id found for sid {sid}. Mapping: {mapping}")
+            return None, None, "Player session not found. Please reconnect."
+
+        # 2. Get the room
+        room = rooms_collection.find_one({"roomId": room_id})
+        if not room:
+            return None, None, "Room not found."
+            
+        # 3. Get the player from the room's player list
+        player = next((p for p in room.get("players", []) if p["id"] == player_id), None)
+        if not player:
+            return None, room, "Player not in this room."
+            
+        return player, room, None
+    except Exception as e:
+        logger.error(f"[AUTH_ERROR] Exception in _get_player_and_room: {e}")
+        return None, None, "A server error occurred during authentication."
+
+
+def _update_and_broadcast_state(room_id: str, update_query: dict, new_phase: str):
+    """
+    A centralized function to update game state in Mongo
+    and broadcast the new state to all clients.
+    """
+    try:
+        if "$set" not in update_query:
+            update_query["$set"] = {}
+
+        update_query["$set"]["gamePhase"] = new_phase
+        update_query["$set"]["lastActivity"] = datetime.utcnow()
+
+        rooms_collection.update_one({"roomId": room_id}, update_query)
+
+        # ⭐️ UPDATED this query to send the new meme list
+        room = rooms_collection.find_one(
+            {"roomId": room_id},
+            {
+                "roomId": 1, "players": 1, "gamePhase": 1, "currentRound": 1, 
+                "totalRounds": 1, "currentJudge": 1, "currentSentence": 1,
+                "submissions": 1, "host": 1, "_id": 0,
+                "availableMemes": 1 # ⭐️ ADDED: Send the memes to clients
+            }
+        )
+
+        if not room:
+            logger.error(f"Failed to find room {room_id} after update")
             return
 
-        host["isHost"] = True
-        host["isConnected"] = True
-        host["lastSeen"] = datetime.utcnow()
+        socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
+        logger.info(f"[STATE_CHANGE] Room {room_id} advanced to {new_phase}")
 
+    except Exception as e:
+        logger.error(f"Error in _update_and_broadcast_state: {e}")
+        socketio.emit("error", {"error": "A server error occurred", "code": "STATE_CHANGE_FAILED"}, to=room_id)
+
+# -------------------------------------------------------------------
+# SOCKET.IO EVENTS: CONNECTION & LOBBY
+# -------------------------------------------------------------------
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    logger.info(f"[CONNECT] Client connected: {request.sid}")
+
+@socketio.on('rejoinRoom')
+def handle_rejoin(data):
+    sid = request.sid
+    room_id = data.get('roomId')
+    session_id = data.get('sessionId')
+    user_id = data.get('userId')
+
+    # 1. Check the 15-second grace period
+    if not pop_rejoin_grace(session_id):
+        logger.warning(f"[REJOIN_FAIL] Grace period expired/invalid: {session_id}")
+        emit('error', {'code': 'SESSION_EXPIRED', 'message': 'Reconnection timed out'})
+        return
+
+    # 2. Verify the session exists in Redis
+    session_data = {}
+    if redis_client:
+        session_data = redis_client.hgetall(f"session:{session_id}") or {}
+
+    # 3. Security Check: Block if data doesn't match
+    if session_data.get('roomId') != room_id or session_data.get('playerId') != user_id:
+        logger.warning(f"[REJOIN_FAIL] Data mismatch for session {session_id}")
+        emit('error', {'code': 'INVALID_SESSION', 'message': 'Session mismatch'})
+        return
+
+    # 4. SUCCESS: Link the Socket
+    set_socket_mapping(sid, room_id, user_id, session_id)
+    join_room(room_id)
+
+    # 5. Update MongoDB (Player is BACK)
+    rooms_collection.update_one(
+        {"roomId": room_id, "players.id": user_id},
+        {"$set": {"players.$.isConnected": True, "players.$.lastSeen": datetime.utcnow()}}
+    )
+
+    # 6. Send the latest state
+    room = rooms_collection.find_one({"roomId": room_id})
+    if room:
+        emit('gameStateUpdate', json_safe(room))
+        socketio.emit('playerReconnected', {'playerId': user_id}, to=room_id)
+
+    logger.info(f"[REJOIN_SUCCESS] Player {user_id} re-linked to room {room_id}")
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    """Handle client disconnection with prioritized RAM cleanup and DB purging."""
+    sid = request.sid
+    logger.info(f"[DISCONNECT] Client disconnected: {sid}")
+
+    try:
+        # 1. Fetch session mapping
+        session = get_socket_mapping(sid)
+        
+        # 2. PRIORITY RAM CLEANUP: Always remove from local_socket_store immediately
+        if sid in local_socket_store:
+            del local_socket_store[sid]
+            logger.info(f"[RAM_CLEANUP] Purged sid {sid} from memory store.")
+
+        if not session:
+            logger.info(f"[INFO] Disconnect cleanup finished (no session mapping): {sid}")
+            return
+
+        # Helper to handle byte-decoding and CamelCase vs snake_case naming
+        def _val(key: str) -> str:
+            v = session.get(key) or session.get(key.encode())
+            # If primary key not found, check for common naming alternatives
+            if not v:
+                alt = "session_id" if key == "sessionId" else "sessionId"
+                v = session.get(alt) or session.get(alt.encode())
+            
+            if isinstance(v, bytes):
+                return v.decode()
+            return v or ""
+
+        room_id = _val("roomId")
+        player_id = _val("playerId")
+        session_id = _val("sessionId")
+
+        # Validate we have enough data to update the Database
+        if not all([room_id, player_id, session_id]):
+            logger.warning(f"[INFO] Incomplete session data on disconnect: {session}")
+            return
+
+        # 3. DATABASE UPDATE: Mark player as disconnected
+        rooms_collection.update_one(
+            {"roomId": room_id, "players.id": player_id},
+            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
+        )
+        logger.info(f"[DISCONNECT] Updated DB for player {player_id}")
+
+        # 4. ROOM STATUS CHECK
+        room = rooms_collection.find_one({"roomId": room_id})
+        if not room:
+            return
+
+        # 5. AUTO-PURGE LOGIC: If no one is connected anymore, kill the room
+        active_players = [p for p in room["players"] if p.get("isConnected", False)]
+        if not active_players:
+            logger.info(f"[CLEANUP] Room {room_id} is now empty. Purging all database records.")
+            rooms_collection.delete_one({"roomId": room_id})
+            sessions_collection.delete_many({"roomId": room_id})
+            cleanup_room_runtime(room_id)
+            return
+
+        # 6. HOST MIGRATION LOGIC (Only runs if players are still in the room)
+        host_id = room.get("host", {}).get("id")
+        new_host_assigned = False
+        
+        if player_id == host_id:
+            logger.warning(f"[HOST_MIGRATE] Host {player_id} left. Attempting migration in {room_id}")
+            
+            # Find the next available player who is currently connected
+            new_host = next((p for p in room["players"] if p["id"] != host_id and p.get("isConnected", True)), None)
+            
+            if new_host:
+                logger.info(f"[HOST_MIGRATE] Promoting {new_host['username']} ({new_host['id']}) to Host")
+                new_host["isHost"] = True
+                
+                # Update player status and room host reference in one go
+                rooms_collection.update_one(
+                    {"roomId": room_id, "players.id": new_host["id"]},
+                    {"$set": {"players.$.isHost": True}}
+                )
+                rooms_collection.update_one(
+                    {"roomId": room_id},
+                    {"$set": {"host": new_host}}
+                )
+                new_host_assigned = True
+            else:
+                # No active players left to promote; technically redundant due to Step 5 but safe
+                logger.warning(f"[HOST_MIGRATE] No one to promote. Discarding room {room_id}")
+                rooms_collection.delete_one({"roomId": room_id})
+                cleanup_room_runtime(room_id)
+                return
+
+        # 7. BROADCAST UPDATE: Sync remaining clients
+        updated_room = rooms_collection.find_one({"roomId": room_id})
+        if updated_room:
+            if new_host_assigned:
+                # Full state update so new host gets their UI buttons
+                _update_and_broadcast_state(room_id, {}, updated_room.get("gamePhase", "lobby"))
+            else:
+                # Simple disconnection notice for player icons
+                socketio.emit('playerDisconnected', {
+                    "players": json_safe(updated_room.get("players", [])),
+                    "disconnectedPlayerId": player_id
+                }, to=room_id)
+
+        # 8. FINAL CLEANUP
+        set_rejoin_grace(session_id, 15)
+        clear_socket_mapping(sid)
+
+    except Exception as e:
+        logger.error(f"[ERROR] Exception in handle_disconnect: {e}")
+
+@socketio.on('createRoom')
+def handle_create_room(data):
+    """Create a new game room"""
+    sid = request.sid
+    logger.debug(f"[DEBUG] 'createRoom' event from {sid}: {data}")
+
+    try:
+        host = data.get("host")
+        if not host:
+            emit("error", {"error": "Missing host data", "code": "MISSING_DATA"}, to=sid)
+            return
+
+        host_data = {
+            "id": host.get("id"),
+            "username": host.get("username"),
+            "avatar": host.get("avatar"),
+            "isHost": True,
+            "isConnected": True,
+            "lastSeen": datetime.utcnow(),
+            "score": 0,
+            "roundScores": [],
+            "isJudge": False,
+            "isReady": True, # ⭐️ FIX: Host is ready by default
+        }
+        
         room_id = generate_unique_room_id()
         session_id = generate_session_id()
         
-        print(f"[DEBUG] Generated unique room ID: {room_id}, session ID: {session_id}")
-
         room_data = {
             "roomId": room_id,
-            "host": host,
-            "players": [host],
-            "totalRounds": rounds,  # Changed from "rounds" to "totalRounds"
-            "roundsPerJudge": rounds_per_judge,
+            "host": host_data,
+            "players": [host_data],
+            "totalRounds": int(data.get("rounds", 10)),
+            "roundsPerJudge": int(data.get("roundsPerJudge", 1)),
             "currentRound": 0,
             "gamePhase": "lobby",
             "currentJudge": None,
@@ -1497,813 +1771,656 @@ def handle_create_room(data):
             "createdAt": datetime.utcnow(),
             "lastActivity": datetime.utcnow()
         }
-
         insert_result = rooms_collection.insert_one(room_data)
-        print(f"[DEBUG] Inserted room data with _id: {insert_result.inserted_id}")
 
-        # Upsert session record to avoid duplicates
         sessions_collection.update_one(
             {"sessionId": session_id},
             {"$set": {
-                "sessionId": session_id,
-                "roomId": room_id,
-                "playerId": host["id"],
-                "lastSeen": datetime.utcnow(),
-                "isHost": True
+                "sessionId": session_id, "roomId": room_id, "playerId": host_data["id"],
+                "lastSeen": datetime.utcnow(), "isHost": True
             }},
             upsert=True
         )
 
-        # Track active session in Redis
-        set_active_session(session_id, room_id, host["id"])
-
-        sid = request.sid
-        join_room(room_id)
-        print(f"[DEBUG] Socket {sid} joined room {room_id}")
-
-        # Convert ObjectId for JSON serialization
-        room_data["_id"] = str(insert_result.inserted_id)
+        set_active_session(session_id, room_id, host_data["id"])
         
-        # Emit room created event with session ID
+        # Map the host's socket ID (sid) to their player/room
+        set_socket_mapping(sid, room_id, host_data["id"], session_id)
+
+        join_room(room_id)
+        logger.info(f"[CREATE] Host {host_data['id']} created room {room_id} and mapped to {sid}")
+
+        room_data["_id"] = str(insert_result.inserted_id)
         emit('roomCreated', {
             "roomData": json_safe(room_data),
             "sessionId": session_id
         }, to=sid)
 
-        # Return success response to the callback
-        return {"success": True, "roomId": room_id, "sessionId": session_id}
-
     except Exception as e:
-        print(f"[ERROR] Error in createRoom: {str(e)}")
-        emit("error", {"error": "Failed to create room", "code": "CREATE_ROOM_FAILED"})
-        return {"success": False, "error": "Failed to create room"}
+        logger.error(f"[ERROR] Error in createRoom: {str(e)}")
+        emit("error", {"error": "Failed to create room", "code": "CREATE_ROOM_FAILED"}, to=sid)
 
 @socketio.on('joinRoom')
 def handle_join_room(data):
-    """Join an existing room with connection validation + reconnect support"""
-    print(f"[DEBUG] Received 'joinRoom' event with data: {data}")
-
+    """A single, unified handler for joining a room."""
+    sid = request.sid
+    logger.debug(f"[DEBUG] 'joinRoom' event from {sid}: {data}")
+    
     try:
         room_id = data.get("roomId")
-        player = data.get("player")
+        player_data = data.get("player") # Player data from client
+        player_id = player_data.get("id")
         provided_session_id = data.get("sessionId")
 
-        if not room_id or not player:
-            emit("error", {"error": "Room ID and player info required", "code": "MISSING_DATA"}, to=request.sid)
+        if not room_id or not player_data or not player_id:
+            emit("error", {"error": "Room ID and player info required", "code": "MISSING_DATA"}, to=sid)
             return
 
-        # Validate room exists
+        rejoined_from_grace = False
+        if provided_session_id and pop_rejoin_grace(provided_session_id):
+            rejoined_from_grace = True
+            logger.info(f"[REJOIN] Player {player_id} reconnected within grace period")
+
         room, error = get_room_with_validation(room_id)
         if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"}, to=request.sid)
+            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"}, to=sid)
             return
 
-        # If game already started, allow rejoin path when sessionId is provided or player already exists
         game_started = room.get("gamePhase") != "lobby"
-
-        player_id = player["id"]
-
-        # Reconnect handling: check if this player is already in the room
+        session_id = provided_session_id
+        
         existing_idx = next((i for i, p in enumerate(room.get("players", [])) if p["id"] == player_id), None)
 
         if existing_idx is not None:
-            # Player is rejoining → update their status and ensure they have a sessionId
+            # PATH A: Player is REJOINING (this is what the host does after creating)
+            logger.info(f"[REJOIN] Player {player_id} is rejoining room {room_id}")
             existing_player = room["players"][existing_idx]
             existing_player["isConnected"] = True
             existing_player["lastSeen"] = datetime.utcnow()
-
-            # Reuse sessionId if present, otherwise create and persist it
-            session_id = provided_session_id or existing_player.get("sessionId")
+            
             if not session_id:
-                session_id = generate_session_id()
-                existing_player["sessionId"] = session_id
-                # update the in-memory room players so DB update below persists sessionId
-                room["players"][existing_idx] = existing_player
-
-            print(f"[DEBUG] Player {player_id} reconnected in room {room_id} (session {session_id})")
+                session_id = existing_player.get("sessionId") or generate_session_id()
+            existing_player["sessionId"] = session_id
+            
+            # ⭐️ FIX: Ensure rejoining players are marked as ready
+            existing_player["isReady"] = True 
+            
+            room["players"][existing_idx] = existing_player
+            
+            rooms_collection.update_one(
+                {"roomId": room_id},
+                {"$set": {f"players.{existing_idx}": existing_player, "lastActivity": datetime.utcnow()}}
+            )
 
         else:
-            # Fresh player joining
+            # PATH B: Player is JOINING FRESH
             if game_started:
-                emit("error", {"error": "Game has already started", "code": "GAME_ALREADY_STARTED"}, to=request.sid)
+                emit("error", {"error": "Game has already started", "code": "GAME_ALREADY_STARTED"}, to=sid)
                 return
+            
+            logger.info(f"[JOIN] New player {player_id} joining room {room_id}")
             session_id = provided_session_id or generate_session_id()
-            player["isConnected"] = True
-            player["lastSeen"] = datetime.utcnow()
-            player["sessionId"] = session_id
-            room.setdefault("players", []).append(player)
-            print(f"[DEBUG] New player {player_id} joined room {room_id} (session {session_id})")
+            new_player = {
+                "id": player_id,
+                "username": player_data.get("username"),
+                "avatar": player_data.get("avatar"),
+                "isHost": False,
+                "isConnected": True,
+                "lastSeen": datetime.utcnow(),
+                "score": 0,
+                "roundScores": [],
+                "isJudge": False,
+                "sessionId": session_id,
+                # ⭐️ FIX: Set 'isReady' from client data
+                "isReady": player_data.get("isReady", True), 
+            }
+            
+            rooms_collection.update_one(
+                {"roomId": room_id},
+                {"$push": {"players": new_player}, "$set": {"lastActivity": datetime.utcnow()}}
+            )
 
-        # Save room update in DB (players possibly modified above)
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {"$set": {"players": room["players"], "lastActivity": datetime.utcnow()}}
-        )
-
-        # Save session record in DB
+        # 4. DATABASE & REDIS UPDATES
+        
         sessions_collection.update_one(
             {"sessionId": session_id},
             {"$set": {
-                "sessionId": session_id,
-                "roomId": room_id,
-                "playerId": player_id,
-                "lastSeen": datetime.utcnow(),
-                "isHost": False
+                "sessionId": session_id, "roomId": room_id, "playerId": player_id,
+                "lastSeen": datetime.utcnow(), "isHost": False
             }},
             upsert=True
         )
 
-        # Remove stale sessions of same player in same room to avoid DB bloat
         sessions_collection.delete_many({
-            "roomId": room_id,
-            "playerId": player_id,
-            "sessionId": {"$ne": session_id}
+            "roomId": room_id, "playerId": player_id, "sessionId": {"$ne": session_id}
         })
 
-        # Save sid → session mapping in Redis (if available)
-        sid = request.sid
-        if redis_client:
-            try:
-                redis_client.hset(f"sid:{sid}", mapping={
-                    "sessionId": session_id,
-                    "roomId": room_id,
-                    "playerId": player_id
-                })
-                redis_client.expire(f"sid:{sid}", 3600)  # expire in 1h
-            except Exception as e:
-                print(f"[WARN] Failed to write sid mapping to Redis: {e}")
+        # CRITICAL: Map socket ID (for both rejoin and new join)
+        set_socket_mapping(sid, room_id, player_id, session_id)
+        set_active_session(session_id, room_id, player_id)
+        logger.info(f"[AUTH] Mapped {sid} to {player_id} in {room_id}")
 
-        # Track active session (your helper)
-        try:
-            set_active_session(session_id, room_id, player_id)
-        except Exception:
-            pass
-
-        # Join socket room and emit updates
+        # 5. EMIT UPDATES
         join_room(room_id)
-        print(f"[DEBUG] Socket {sid} joined room {room_id}")
+        logger.info(f"[JOIN] Socket {sid} joined room {room_id}")
 
         updated_room = rooms_collection.find_one({"roomId": room_id})
-        if updated_room:
-            updated_room["_id"] = str(updated_room["_id"])
 
-        # Notify others in the room
-        emit("playerJoined", json_safe(updated_room.get("players", [])), to=room_id)
+        if existing_idx is not None or rejoined_from_grace:
+            emit('playerReconnected', {
+                "players": json_safe(updated_room.get("players", [])),
+                "reconnectedPlayerId": player_id
+            }, to=room_id, skip_sid=sid)
+        else:
+            emit("playerJoined", {
+                "players": json_safe(updated_room.get("players", []))
+            }, to=room_id, skip_sid=sid)
 
-        # Send full room state back to joining client (and session id)
         emit("roomJoined", {
             "roomData": json_safe(updated_room),
             "sessionId": session_id
         }, to=sid)
 
     except Exception as e:
-        print(f"[ERROR] Error in joinRoom: {str(e)}")
-        emit("error", {"error": "Failed to join room", "code": "JOIN_FAILED"}, to=request.sid)
-
-
-@socketio.on('rejoinRoom')
-def handle_rejoin_room(data):
-    """Handle room rejoining with session validation + grace period support"""
-    print(f"[DEBUG] Received 'rejoinRoom' event: {data}")
-
-    try:
-        room_id = data.get("roomId")
-        player_id = data.get("playerId")
-        session_id = data.get("sessionId")
-
-        if not all([room_id, player_id, session_id]):
-            print("[ERROR] Missing required rejoin data")
-            emit("error", {"error": "Missing session data", "code": "INVALID_SESSION"}, to=request.sid)
-            return
-
-        # Check grace period for quick reconnect
-        if redis_client.exists(f"disconnected:{player_id}"):
-            print(f"[REJOIN] Player {player_id} reconnecting within grace period")
-        else:
-            print(f"[REJOIN] Player {player_id} reconnecting normally")
-
-        # Validate session exists
-        session = sessions_collection.find_one({"sessionId": session_id, "playerId": player_id})
-        if not session:
-            print(f"[ERROR] Invalid session: {session_id}")
-            emit("error", {"error": "Invalid session", "code": "INVALID_SESSION"}, to=request.sid)
-            return
-
-        # Fetch room
-        room, error = get_room_with_validation(room_id)
-        if error or not room:
-            print(f"[ERROR] Room validation failed for {room_id}: {error}")
-            emit("error", {"error": error or "Room not found", "code": "ROOM_NOT_FOUND"}, to=request.sid)
-            return
-
-        if not validate_player_in_room(room, player_id):
-            print(f"[ERROR] Player {player_id} not in room {room_id}")
-            emit("error", {"error": "Player not in room", "code": "PLAYER_NOT_IN_ROOM"}, to=request.sid)
-            return
-
-        # Update player as connected in MongoDB
-        update_player_connection_status(room_id, player_id, True)
-        print(f"[REJOIN] Player {player_id} marked as connected in room {room_id}")
-
-        # Update session timestamp
-        sessions_collection.update_one(
-            {"sessionId": session_id},
-            {"$set": {"lastSeen": datetime.utcnow()}}
-        )
-
-        # Remove stale sessions of same player in same room
-        sessions_collection.delete_many({
-            "roomId": room_id,
-            "playerId": player_id,
-            "sessionId": {"$ne": session_id}
-        })
-
-        # Update Redis sid mapping and remove disconnected marker
-        sid = request.sid
-        redis_client.hset(f"sid:{sid}", mapping={
-            "sessionId": session_id,
-            "roomId": room_id,
-            "playerId": player_id
-        })
-        redis_client.expire(f"sid:{sid}", 3600)
-        redis_client.delete(f"disconnected:{player_id}")  # Remove grace period
-        print(f"[REJOIN] Redis mappings updated for sid {sid}")
-
-        # Track active session
-        set_active_session(session_id, room_id, player_id)
-        print(f"[REJOIN] Active session tracked for player {player_id}")
-
-        # Join the Socket.io room
-        join_room(room_id)
-        print(f"[REJOIN] Socket {sid} rejoined room {room_id}")
-
-        # Fetch latest room data
-        updated_room = rooms_collection.find_one({"roomId": room_id})
-        if not updated_room:
-            print(f"[ERROR] Could not fetch updated room for {room_id}")
-            emit("error", {"error": "Room not found after rejoin", "code": "ROOM_FETCH_FAILED"}, to=request.sid)
-            return
-
-        updated_room["_id"] = str(updated_room["_id"])
-
-        # Notify all players about reconnection
-        emit('playerReconnected', {
-            "players": json_safe(updated_room.get("players", [])),
-            "reconnectedPlayerId": player_id
-        }, to=room_id)
-        print(f"[REJOIN] Notified room {room_id} about player {player_id} reconnect")
-
-        # Send full room data to rejoining client
-        emit('roomRejoined', {
-            "roomData": json_safe(updated_room),
-            "restored": True
-        }, to=request.sid)
-        print(f"[REJOIN] Sent full room state to rejoining player {player_id}")
-
-    except Exception as e:
-        print(f"[ERROR] Exception in rejoinRoom: {e}")
-        emit("error", {"error": "Failed to rejoin room", "code": "REJOIN_FAILED"}, to=request.sid)
+        logger.error(f"[ERROR] Error in joinRoom: {str(e)}")
+        emit("error", {"error": "Failed to join room", "code": "JOIN_FAILED"}, to=sid)
 
 @socketio.on('startGame')
 def handle_start_game(data):
-    """Handle game start"""
+    """
+    Host starts the game and automatically becomes the permanent Judge.
+    Transitions directly to 'sentenceCreation' phase.
+    """
+    sid = request.sid
     try:
         room_id = data.get("roomId")
+        player, room, error = _get_player_and_room(sid, room_id)
         
-        if not room_id:
-            emit("error", {"error": "Missing room ID", "code": "MISSING_DATA"})
-            return
-
-        room, error = get_room_with_validation(room_id)
         if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
 
-        # Initialize game state
+        if not player.get("isHost"):
+            emit("error", {"error": "Only the host can start the game", "code": "NOT_HOST"}, to=sid)
+            return
+
         players = room.get("players", [])
-        if not players:
-            emit("error", {"error": "No players in room", "code": "NO_PLAYERS"})
+        if len(players) < 2: 
+            emit("error", {"error": "Not enough players to start", "code": "NOT_ENOUGH_PLAYERS"}, to=sid)
+            return
+            
+        # Check if all players are ready
+        if not all(p.get("isReady", False) for p in players):
+            emit("error", {"error": "Not all players are ready", "code": "PLAYERS_NOT_READY"}, to=sid)
             return
 
-        # Select first judge
-        first_judge = players[0]
-        
-        # Initialize players with scores and round tracking
+        host_judge = None
         updated_players = []
-        for player in players:
-            updated_players.append({
-                **player,
-                "score": 0,
-                "roundScores": [],  # Track scores per round
-                "isJudge": player["id"] == first_judge["id"]
+        
+        # ⭐️ FIX: Automatically make the host the judge forever
+        for p in players:
+            p["score"] = 0
+            p["roundScores"] = []
+            p["isJudge"] = p.get("isHost", False) # Host = True, Everyone else = False
+            
+            if p["isJudge"]:
+                host_judge = p
+                
+            updated_players.append(p)
+
+        initial_update = {
+            "$set": {
+                "currentRound": 1,
+                "currentJudge": host_judge, # Lock the host in as the judge
+                "currentSentence": None,
+                "submissions": [],
+                "players": updated_players,
+            }
+        }
+        
+        # ⭐️ FIX: Skip judge selection entirely. Go straight to writing the prompt!
+        _update_and_broadcast_state(room_id, initial_update, "sentenceCreation")
+
+    except Exception as e:
+        logger.error(f"[ERROR] Error in startGame: {e}")
+        emit("error", {"error": "Failed to start game", "code": "START_GAME_FAILED"}, to=sid)
+
+def get_memes_from_giphy():
+    """Fetches memes from GIPHY and formats them."""
+    try:
+        if not GIPHY_API_KEY:
+            logger.warning("No GIPHY_API_KEY. Falling back to hardcoded memes.")
+            return random.sample(MEMES, min(len(MEMES), 10))
+
+        # Call the GIPHY API to get 50 popular "reaction" GIFs
+        url = "https://api.giphy.com/v1/gifs/search"
+        params = {
+            "api_key": GIPHY_API_KEY,
+            "q": "reaction", # You can change this to "meme", "fail", "lol", etc.
+            "limit": 50,
+            "rating": "pg-13",
+            "lang": "en"
+        }
+        response = requests.get(url, params=params)
+        data = response.json()['data']
+
+        # Format the data to match what our frontend expects
+        formatted_memes = []
+        for meme_data in data:
+            formatted_memes.append({
+                "id": meme_data['id'],
+                "url": meme_data['images']['fixed_height']['url'],
+                "title": meme_data['title'] or "Meme"
             })
 
-        # Update room with game state
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {
-                "$set": {
-                    "gamePhase": "judgeSelection",
-                    "currentRound": 1,
-                    "currentJudge": first_judge,
-                    "currentSentence": None,
-                    "submissions": [],
-                    "players": updated_players,
-                    "lastActivity": datetime.utcnow()
-                }
-            }
-        )
+        # Return 10 random memes from the 50 we fetched
+        return random.sample(formatted_memes, min(len(formatted_memes), 10))
 
-        print(f"[GAME_START] Game started in room {room_id} with {len(players)} players")
-        print(f"[GAME_START] First judge: {first_judge.get('username', 'Unknown')}")
-        
-        updated_room = rooms_collection.find_one({"roomId": room_id})
-        socketio.emit('gameStarted', json_safe(updated_room), to=room_id)
-        
     except Exception as e:
-        print(f"[ERROR] Error in startGame: {str(e)}")
-        emit("error", {"error": "Failed to start game", "code": "START_GAME_FAILED"})
-
-
-@socketio.on('startSentenceCreation')
-def start_sentence_creation(data):
-    room_id = data.get("roomId")
-    if not room_id:
-        emit("error", {"error": "Missing room ID", "code": "MISSING_DATA"})
-        return
-
-    try:
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {
-                "$set": {
-                    "gamePhase": "sentenceCreation",
-                    "lastActivity": datetime.utcnow()
-                }
-            }
-        )
-        emit('gamePhaseChanged', 'sentenceCreation', to=room_id)
-    except Exception as e:
-        print("[ERROR] Could not change to sentenceCreation:", str(e))
-        emit("error", {"error": "Failed to change phase", "code": "PHASE_CHANGE_FAILED"})
-
-@socketio.on('startJudgeSelection')
-def start_judge_selection(data):
-    """Handle judge selection phase"""
-    room_id = data.get("roomId")
-    if not room_id:
-        emit("error", {"error": "Missing room ID", "code": "MISSING_DATA"})
-        return
-
-    try:
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {
-                "$set": {
-                    "gamePhase": "judgeSelection",
-                    "lastActivity": datetime.utcnow()
-                }
-            }
-        )
-        emit('gamePhaseChanged', 'judgeSelection', to=room_id)
-    except Exception as e:
-        print("[ERROR] Could not change to judgeSelection:", str(e))
-        emit("error", {"error": "Failed to change phase", "code": "PHASE_CHANGE_FAILED"})
+        logger.error(f"GIPHY API error: {e}. Falling back to hardcoded memes.")
+        # Fallback to your 15 hardcoded memes if GIPHY fails
+        return random.sample(MEMES, min(len(MEMES), 10))
 
 
 @socketio.on('submitSentence')
 def handle_submit_sentence(data):
-    """Handle sentence submission by judge"""
+    """
+    Judge submits a sentence.
+    Fetches 10 random memes from GIPHY.
+    Moves game to 'memeSelection' phase and starts a timer.
+    """
+    sid = request.sid
     try:
         room_id = data.get("roomId")
         sentence = data.get("sentence")
-        
-        if not room_id or not sentence:
-            emit("error", {"error": "Missing room ID or sentence", "code": "MISSING_DATA"})
+
+        if not sentence:
+            emit("error", {"error": "Sentence cannot be empty", "code": "MISSING_DATA"}, to=sid)
             return
 
-        room, error = get_room_with_validation(room_id)
+        player, room, error = _get_player_and_room(sid, room_id)
         if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
 
-        # Validate that the sender is the current judge
-        current_judge = room.get("currentJudge")
-        if not current_judge:
-            emit("error", {"error": "No judge assigned", "code": "NO_JUDGE"})
+        current_judge_id = room.get("currentJudge", {}).get("id")
+        if not player.get("isJudge") or player.get("id") != current_judge_id:
+            emit("error", {"error": "Only the judge can submit a sentence", "code": "NOT_JUDGE"}, to=sid)
             return
 
-        # Update room with sentence and start meme selection phase
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {
-                "$set": {
-                    "currentSentence": sentence,
-                    "gamePhase": "memeSelection",
-                    "submissions": [],
-                    "lastActivity": datetime.utcnow()
-                }
+        # ⭐️ --- NEW LOGIC TO FIX LAG --- ⭐️
+        # Call our new function to get 10 memes from the web
+        random_memes = get_memes_from_giphy()
+        # ⭐️ ------------------------------ ⭐️
+
+        sentence_update = {
+            "$set": {
+                "currentSentence": sentence,
+                "submissions": [],
+                "availableMemes": random_memes # ⭐️ ADDED: Store the 10 memes
             }
-        )
+        }
 
-        # Start timer for meme selection
-        start_game_timer(room_id, 30)
+        start_game_timer(room_id, 45)
+        _update_and_broadcast_state(room_id, sentence_update, "memeSelection")
 
-        room = rooms_collection.find_one({"roomId": room_id})
-        socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
-        emit('sentenceSubmitted', sentence, to=room_id)
-        
     except Exception as e:
-        print(f"[ERROR] Error in submitSentence: {str(e)}")
-        emit("error", {"error": "Failed to submit sentence", "code": "SUBMIT_SENTENCE_FAILED"})
-
+        logger.error(f"[ERROR] Error in submitSentence: {str(e)}")
+        emit("error", {"error": "Failed to submit sentence", "code": "SUBMIT_SENTENCE_FAILED"}, to=sid)
 
 @socketio.on('selectMeme')
 def handle_select_meme(data):
-    """Handle meme selection by players"""
+    sid = request.sid
     try:
         room_id = data.get("roomId")
-        player_id = data.get("playerId")
-        meme_id = data.get("memeId")
-        
-        if not all([room_id, player_id, meme_id]):
-            emit("error", {"error": "Missing required data", "code": "MISSING_DATA"})
-            return
+        meme_id = data.get("memeId") 
 
-        room, error = get_room_with_validation(room_id)
+        player, room, error = _get_player_and_room(sid, room_id)
         if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
 
-        # Validate that the player is not the judge
-        current_judge = room.get("currentJudge")
-        if current_judge and current_judge.get("id") == player_id:
-            emit("error", {"error": "Judge cannot submit memes", "code": "JUDGE_CANNOT_SUBMIT"})
+        if player.get("isJudge"):
+            emit("error", {"error": "Judge cannot submit memes", "code": "JUDGE_CANNOT_SUBMIT"}, to=sid)
             return
-
-        # Additional check: verify player is not marked as judge
-        player = next((p for p in room.get("players", []) if p.get("id") == player_id), None)
-        if player and player.get("isJudge", False):
-            emit("error", {"error": "Judge cannot submit memes", "code": "JUDGE_CANNOT_SUBMIT"})
-            return
-
-        # Check if player already submitted
+            
         submissions = room.get("submissions", [])
-        for submission in submissions:
-            if submission.get("playerId") == player_id:
-                print(f"[DEBUG] Player {player_id} already submitted a meme")
-                emit("error", {"error": "You have already submitted a meme", "code": "ALREADY_SUBMITTED"})
-                return
+        if any(s["playerId"] == player["id"] for s in submissions):
+            emit("error", {"error": "You have already submitted", "code": "ALREADY_SUBMITTED"}, to=sid)
+            return
 
-        # Add new submission
-        new_submission = {
-            "playerId": player_id,
-            "memeId": meme_id,
-            "score": None
-        }
-        submissions.append(new_submission)
+        available_memes = room.get("availableMemes", [])
         
-        print(f"[DEBUG] Added submission for player {player_id}: {new_submission}")
-        print(f"[DEBUG] Total submissions now: {len(submissions)}")
+        # Finding the meme object from the list we generated at the start of the round
+        selected_meme_obj = next((m for m in available_memes if m["id"] == meme_id), None)
+        
+        if not selected_meme_obj:
+            logger.error(f"[DATA_ERROR] Room {room_id}: Submitted ID {meme_id} not in available list.")
+            emit("error", {"error": "Invalid meme data submitted.", "code": "INVALID_MEME"}, to=sid)
+            return
 
-        # Update room with new submission
-        rooms_collection.update_one(
+        # NEW CHANGE: Separated memeId and memeUrl so the Frontend knows what to render
+        new_submission = {
+            "playerId": player["id"],
+            "username": player["username"],
+            "avatar": player.get("avatar"),
+            "memeId": selected_meme_obj["id"],    # The GIPHY ID string
+            "memeUrl": selected_meme_obj["url"],  # UPDATED: Explicit field for the .gif link
+            "title": selected_meme_obj.get("title", "Meme"),
+            "score": 0                             # Changed from None to 0 for easier math
+        }
+        
+        result = rooms_collection.find_one_and_update(
             {"roomId": room_id},
-            {"$set": {"submissions": submissions}}
+            {"$push": {"submissions": new_submission}},
+            return_document=True
         )
-
-        # Check if all non-judge players have submitted
-        non_judge_players = [p for p in room.get("players", []) if not p.get("isJudge", False)]
-        all_submitted = len(submissions) >= len(non_judge_players)
+        
+        new_submissions = result.get("submissions", [])
+        players = result.get("players", [])
+        non_judge_players = [p for p in players if not p.get("isJudge")]
+        
+        all_submitted = len(new_submissions) >= len(non_judge_players)
+        update_payload = {"$set": {"submissions": new_submissions}}
 
         if all_submitted:
-            # Transition to meme reveal phase
-            rooms_collection.update_one(
-                {"roomId": room_id},
-                {"$set": {"gamePhase": "memeReveal"}}
-            )
-            room = rooms_collection.find_one({"roomId": room_id})
-            socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
-
-        emit('memeSelected', new_submission, to=room_id)
-        
+            logger.info(f"[GAME] All players submitted in {room_id}. Moving to reveal.")
+            stop_game_timer(room_id)
+            _update_and_broadcast_state(room_id, update_payload, "memeReveal")
+        else:
+            _update_and_broadcast_state(room_id, update_payload, "memeSelection")
+            
     except Exception as e:
-        print(f"[ERROR] Error in selectMeme: {str(e)}")
-        emit("error", {"error": "Failed to select meme", "code": "SELECT_MEME_FAILED"})
+        logger.error(f"[ERROR] Error in selectMeme: {str(e)}")
+        emit("error", {"error": "Failed to select meme", "code": "SELECT_MEME_FAILED"}, to=sid)
+
 
 @socketio.on('scoreMeme')
 def handle_score_meme(data):
-    """Handle meme scoring by judge"""
+    """Judge scores a meme."""
+    sid = request.sid
     try:
         room_id = data.get("roomId")
-        player_id = data.get("playerId")
-        score = data.get("score")
-        judge_id = data.get("judgeId")
-        
-        if not all([room_id, player_id, score, judge_id]):
-            emit("error", {"error": "Missing required data", "code": "MISSING_DATA"})
-            return
+        player_id_to_score = data.get("playerId")
+        score = int(data.get("score", 0))
 
-        room, error = get_room_with_validation(room_id)
+        player, room, error = _get_player_and_room(sid, room_id)
         if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
-
-        # Validate score range
-        if not isinstance(score, int) or score < 1 or score > 10:
-            emit("error", {"error": "Score must be between 1 and 10", "code": "INVALID_SCORE"})
-            return
-
-        # Validate that the person scoring is the current judge
-        current_judge = room.get("currentJudge")
-        if not current_judge or current_judge.get("id") != judge_id:
-            emit("error", {"error": "Only the current judge can score memes", "code": "NOT_JUDGE"})
+            
+        if not player.get("isJudge"):
+            emit("error", {"error": "Only the judge can score", "code": "NOT_JUDGE"}, to=sid)
             return
 
         current_round = room.get("currentRound", 1)
-        
-        # Find the submission to score and enforce single scoring per player per round
+        total_rounds = room.get("totalRounds", 3) # Defaulting to 3 if not found
         submissions = room.get("submissions", [])
-        submission_found = False
-        for submission in submissions:
-            if submission.get("playerId") == player_id:
-                # Prevent double-scoring
-                if submission.get("score") is not None:
-                    emit("error", {"error": "Already scored", "code": "ALREADY_SCORED"})
+        
+        # Find and update the specific submission
+        submission_updated = False
+        for sub in submissions:
+            if sub["playerId"] == player_id_to_score:
+                if sub.get("score") is not None and sub.get("score") != 0:
+                    emit("error", {"error": "Meme already scored", "code": "ALREADY_SCORED"}, to=sid)
                     return
-                submission["score"] = score
-                submission_found = True
+                sub["score"] = score
+                submission_updated = True
                 break
-
-        if not submission_found:
-            emit("error", {"error": "Submission not found", "code": "SUBMISSION_NOT_FOUND"})
+        
+        if not submission_updated:
+            emit("error", {"error": "Submission not found", "code": "SUBMISSION_NOT_FOUND"}, to=sid)
             return
 
-        # Update the room with the scored submission
+        # 1. Update submissions and player scores in DB
         rooms_collection.update_one(
             {"roomId": room_id},
             {"$set": {"submissions": submissions}}
         )
-
-        # Update player score for this round (idempotent guard: only add once)
-        rooms_collection.update_one(
-            {"roomId": room_id, "players.id": player_id},
-            {
-                "$inc": {"players.$.score": score},
-                "$set": {"lastActivity": datetime.utcnow()}
-            }
-        )
-
-        # Store round score in player's roundScores array
-        rooms_collection.update_one(
-            {"roomId": room_id, "players.id": player_id},
-            {
-                "$push": {"players.$.roundScores": {"round": current_round, "score": score}},
-                "$set": {"lastActivity": datetime.utcnow()}
-            }
-        )
-
-        # Log score accumulation
-        room = rooms_collection.find_one({"roomId": room_id})
-        player = next((p for p in room.get("players", []) if p.get("id") == player_id), None)
-        if player:
-            print(f"[SCORE] Round {current_round}: {player.get('username', 'Unknown')} scored {score} points. Total score: {player.get('score', 0)}")
-
-        # Check if all memes have been scored
-        all_scored = all(sub.get("score") is not None for sub in submissions)
-        if all_scored:
-            print(f"[ROUND_COMPLETE] All memes scored for round {current_round}")
-            rooms_collection.update_one(
-                {"roomId": room_id},
-                {"$set": {"gamePhase": "results"}}
-            )
-            room = rooms_collection.find_one({"roomId": room_id})
-            socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
         
-        emit('memeScored', {"playerId": player_id, "score": score}, to=room_id)
+        rooms_collection.update_one(
+            {"roomId": room_id, "players.id": player_id_to_score},
+            {"$inc": {"players.$.score": score}}
+        )
+
+        # 2. Check if every player in this round has been scored
+        all_scored = all(s.get("score") is not None and s.get("score") != 0 for s in submissions)
+        
+        if all_scored:
+            # ⭐️ NEW LOGIC: Check if this was the FINAL round ⭐️
+            if current_round >= total_rounds:
+                logger.info(f"[GAME_OVER] Final round completed in {room_id}. Finalizing...")
+                
+                # Call your finalize function to save to MongoDB history
+                finalize_game(room_id) 
+                
+                # Move to the Final Results screen
+                _update_and_broadcast_state(room_id, {}, "finalResults")
+            else:
+                logger.info(f"[ROUND_OVER] Round {current_round} done. Moving to results.")
+                _update_and_broadcast_state(room_id, {}, "results")
+        else:
+            # Still more memes to score in this round
+            _update_and_broadcast_state(room_id, {}, "memeReveal")
         
     except Exception as e:
-        print(f"[ERROR] Error in scoreMeme: {str(e)}")
-        emit("error", {"error": "Failed to score meme", "code": "SCORE_MEME_FAILED"})
+        logger.error(f"[ERROR] Error in scoreMeme: {str(e)}")
+        emit("error", {"error": "Failed to score meme", "code": "SCORE_MEME_FAILED"}, to=sid)
+
 
 @socketio.on('nextRound')
 def handle_next_round(data):
-    """Handle next round progression"""
+    """Host triggers the next round."""
+    sid = request.sid
     try:
         room_id = data.get("roomId")
         
-        if not room_id:
-            emit("error", {"error": "Missing room ID", "code": "MISSING_DATA"})
+        player, room, error = _get_player_and_room(sid, room_id)
+        if error:
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
+            return
+            
+        if not player.get("isHost"):
+            emit("error", {"error": "Only the host can start the next round", "code": "NOT_HOST"}, to=sid)
             return
 
-        room, error = get_room_with_validation(room_id)
-        if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
-            return
+        current_round = room.get("currentRound", 0)
+        total_rounds = room.get("totalRounds", 10)
         
-        current_round = room.get("currentRound", 0) + 1
-        total_rounds = room.get("totalRounds")
-        rounds_per_judge = room.get("roundsPerJudge", 5)  # Default to 5
-        
-        print(f"[DEBUG] Next round calculation:", {
-            "current_round": current_round,
-            "total_rounds": total_rounds,
-            "rounds_per_judge": rounds_per_judge,
-            "players_count": len(room.get("players", [])),
-            "will_end": current_round > total_rounds
-        })
-        
-        if current_round > total_rounds:
-            # Game is complete, show final results and finalize
-            rooms_collection.update_one(
-                {"roomId": room_id},
-                {"$set": {"gamePhase": "results", "lastActivity": datetime.utcnow()}}
-            )
-            room = rooms_collection.find_one({"roomId": room_id})
-            result_doc = finalize_game(room_id)
-            payload = json_safe(room)
+        if current_round >= total_rounds:
+            # GAME OVER
+            logger.info(f"[GAME] Game ended in {room_id}. Moving to final results.")
+            result_doc = finalize_game(room_id) # Assumes this function exists
+            final_update = {}
             if result_doc:
-                payload["finalResult"] = result_doc
-            socketio.emit('gameEnded', payload, to=room_id)
-            return
+                final_update["$set"] = {"finalResult": result_doc}
+            _update_and_broadcast_state(room_id, final_update, "finalResults")
+            
         else:
-            # Calculate which player should be judge based on rounds_per_judge
-            players = room["players"]
-            judge_index = ((current_round - 1) // rounds_per_judge) % len(players)
-            next_judge = players[judge_index]
+            # START NEXT ROUND
+            next_round_num = current_round + 1
+            logger.info(f"[GAME] Starting round {next_round_num} in {room_id}.")
             
-            print(f"[DEBUG] Round {current_round}: Judge {next_judge.get('username', 'Unknown')} (index {judge_index})")
-                
-            # Update all players' judge status
-            updated_players = []
-            for player in players:
-                updated_players.append({
-                    **player,
-                    "isJudge": player["id"] == next_judge["id"]
-                })
+            host_judge = room.get("host", player) 
             
-            rooms_collection.update_one(
-                {"roomId": room_id},
-                {
-                    "$set": {
-                        "gamePhase": "judgeSelection",
-                        "currentRound": current_round,
-                        "currentJudge": next_judge,
-                        "currentSentence": None,
-                        "submissions": [],
-                        "players": updated_players,
-                        "lastActivity": datetime.utcnow()
-                    }
+            next_round_update = {
+                "$set": {
+                    "currentRound": next_round_num,
+                    "currentJudge": host_judge, 
+                    "currentSentence": None,   
+                    "submissions": [],          
                 }
-            )
-        
-        updated_room = rooms_collection.find_one({"roomId": room_id})
-        emit('roundStarted', json_safe(updated_room), to=room_id)
+            }
+
+            _update_and_broadcast_state(room_id, next_round_update, "sentenceCreation")
+            
     except Exception as e:
-        print(f"[ERROR] Error in nextRound: {str(e)}")
-        emit("error", {"error": "Failed to progress to next round", "code": "NEXT_ROUND_FAILED"})
+        logger.error(f"[ERROR] Error in nextRound: {str(e)}")
+        emit("error", {"error": "Failed to start next round", "code": "NEXT_ROUND_FAILED"}, to=sid)
 
 @socketio.on('chatMessage')
 def handle_chat_message(data):
-    """Handle chat messages"""
+    """Handle chat messages with explicit key checking"""
+    sid = request.sid
     try:
-        room_id = data.get("roomId")
-        message = data.get("message")
+        # 1. Capture the data with fallback for both naming styles
+        room_id = data.get("roomId") or data.get("room_id")
+        message_body = data.get("message")
         
-        if not room_id or not message:
+        # LOG: See what the backend is actually receiving
+        logger.info(f"[CHAT_DEBUG] Received message from {sid} for Room: {room_id}")
+
+        if not room_id or not message_body:
+            logger.warning(f"[CHAT_WARN] Missing keys! Room: {room_id}, Msg Body: {bool(message_body)}")
             return
 
-        room, error = get_room_with_validation(room_id)
+        # 2. Authenticate the sender (using the helper we fixed earlier)
+        player, room, error = _get_player_and_room(sid, room_id)
         if error:
+            logger.warning(f"[CHAT_AUTH_ERROR] {sid} in {room_id}: {error}")
             return
-            
-        emit('chatMessage', message, to=room_id)
+        
+        # 3. Construct the final object (matching your Frontend's ChatMessage type)
+        final_payload = {
+            "id": message_body.get("id"),
+            "username": player.get("username", "Player"),
+            "message": message_body.get("message"), # The actual string text
+            "timestamp": message_body.get("timestamp"),
+            "userId": player.get("id"),
+            "playerId": player.get("id")
+        }
+
+        # 4. Blast it to the room
+        emit('chatMessage', final_payload, to=room_id)
+        logger.info(f"[CHAT_SUCCESS] Message broadcasted to room {room_id}")
         
     except Exception as e:
-        print(f"[ERROR] Error in chatMessage: {str(e)}")
-
-@socketio.on('discardRoom')
-def handle_discard_room(data):
-    """Handle room discarding with cleanup"""
-    try:
-        room_id = data.get('roomId')
-        
-        if not room_id:
-            emit("error", {"error": "Missing room ID", "code": "MISSING_DATA"})
-            return
-
-        room, error = get_room_with_validation(room_id)
-        if error:
-            emit("error", {"error": error, "code": "ROOM_NOT_FOUND"})
-            return
-
-        print(f"[DEBUG] Discarding room {room_id}")
-
-        # Notify all clients in the room
-        emit('roomDiscarded', {}, to=room_id)
-
-        # Remove all players from the socket room
-        connected_sids = socketio.server.manager.get_participants('/', room_id)
-        for sid in connected_sids:
-            leave_room(room_id, sid=sid)
-
-        print(f"[DEBUG] All clients removed from room {room_id}")
-
-        # Clean up database records
-        rooms_collection.delete_one({"roomId": room_id})
-        sessions_collection.delete_many({"roomId": room_id})
-        
-        # Clean up active sessions and timers (Redis)
-        cleanup_room_runtime(room_id)
-
-        print(f"[DEBUG] Room {room_id} completely discarded and cleaned up")
-
-    except Exception as e:
-        print(f"[ERROR] Error in discardRoom: {str(e)}")
-        emit("error", {"error": "Failed to discard room", "code": "DISCARD_ROOM_FAILED"})
+        logger.error(f"[CHAT_EXCEPTION] Critical error: {str(e)}")
 
 @socketio.on('leaveRoom')
 def handle_leave_room(data):
+    """A player explicitly clicks 'Leave Room'"""
+    sid = request.sid
     try:
-        print(f"[BACKEND] leaveRoom event received: {data}")
         room_id = data.get('roomId')
-        player_id = data.get('playerId')
-
-        if not room_id or not player_id:
-            emit("error", {"error": "Missing room ID or player ID", "code": "MISSING_DATA"})
+        player, room, error = _get_player_and_room(sid, room_id)
+        
+        if error:
+            logger.info(f"[LEAVE] Player {sid} tried to leave, but: {error}")
             return
-
-        room = rooms_collection.find_one({"roomId": room_id})
-        if not room:
-            print("[BACKEND] Room not found or already deleted.")
-            return
-
-        # Mark player as disconnected but keep in players list to avoid losing score/state mid-game
-        updated_players = []
-        for p in room.get('players', []):
-            if p['id'] == player_id:
-                updated_players.append({**p, 'isConnected': False, 'lastSeen': datetime.utcnow()})
-            else:
-                updated_players.append(p)
-        print(f"[BACKEND] Players after removal: {updated_players}")
+            
+        logger.info(f"[LEAVE] Player {player['id']} is leaving room {room_id}")
 
         rooms_collection.update_one(
-            {"roomId": room_id},
-            {
-                "$set": {
-                    "players": updated_players,
-                    "lastActivity": datetime.utcnow()
-                }
-            }
+            {"roomId": room_id, "players.id": player['id']},
+            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
         )
+        
+        sessions_collection.delete_many({"roomId": room_id, "playerId": player['id']})
+        delete_player_sessions(room_id, player['id'])
+        clear_socket_mapping(sid)
 
-        leave_room(room_id)
-        print(f"[BACKEND] Socket {request.sid} is leaving room {room_id}")
+        leave_room(room_id, sid)
 
-        # Optional: clean up sessions
-        sessions_collection.delete_many({"roomId": room_id, "playerId": player_id})
-        delete_player_sessions(room_id, player_id)
-
-        print(f"[BACKEND] Emitting 'playerLeft' to room {room_id}")
-        emit('playerLeft', json_safe({
-            "players": updated_players,
-            "disconnectedPlayerId": player_id
-        }), room=room_id, skip_sid=request.sid)
-
+        updated_room = rooms_collection.find_one({"roomId": room_id})
+        emit('playerLeft', {
+            "players": json_safe(updated_room.get("players", [])),
+            "leftPlayerId": player['id']
+        }, to=room_id)
 
     except Exception as e:
-        print(f"[ERROR] leaveRoom: {str(e)}")
+        logger.error(f"[ERROR] Error in leaveRoom: {str(e)}")
 
 
-# Health check endpoint
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Backend is running successfully."})
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """Health check endpoint with detailed status"""
+@socketio.on('discardRoom')
+def handle_discard_room(data):
+    """(Host only) Kills the room for everyone"""
+    sid = request.sid
     try:
-        # Test database connection
-        db.command('ping')
+        room_id = data.get('roomId')
+        # ⭐️ FIX: Use the helper to authenticate the host
+        player, room, error = _get_player_and_room(sid, room_id)
         
-        # Count active rooms and sessions
-        active_rooms = rooms_collection.count_documents({})
-        active_sessions_count = sessions_collection.count_documents({})
+        if error:
+            emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
+            return
+            
+        if not player.get("isHost"):
+            emit("error", {"error": "Only the host can discard the room", "code": "NOT_HOST"}, to=sid)
+            return
+
+        logger.info(f"[DISCARD] Host {player['id']} is discarding room {room_id}")
+
+        emit('roomDiscarded', {"message": "The host has closed the room"}, to=room_id)
+        socketio.close_room(room_id) # Disconnects all sockets
         
-        return jsonify({
-            "status": "healthy",
-            "database": "connected",
-            "active_rooms": active_rooms,
-            "active_sessions": active_sessions_count,
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        rooms_collection.delete_one({"roomId": room_id})
+        sessions_collection.delete_many({"roomId": room_id})
+        cleanup_room_runtime(room_id)
+        
+        logger.info(f"[DISCARD] Room {room_id} completely cleaned up")
+
     except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }), 500
+        logger.error(f"[ERROR] Error in discardRoom: {str(e)}")
+        emit("error", {"error": "Failed to discard room", "code": "DISCARD_ROOM_FAILED"}, to=sid)
+
+
+
+def start_game_timer(room_id, duration=45):
+    """Start a synchronized timer for a room"""
+    end_time = datetime.utcnow() + timedelta(seconds=duration)
+    set_timer(room_id, end_time.isoformat(), duration)
+
+    def timer_worker(rid: str, end_time_local: datetime):
+        try:
+            remaining = (end_time_local - datetime.utcnow()).total_seconds()
+            while remaining > 0:
+                if redis_client and redis_client.hget(f"{TIMER_PREFIX}:{rid}", "cancel") == "1":
+                    logger.info(f"[TIMER] Timer for {rid} cancelled by game event.")
+                    redis_client.hset(f"{TIMER_PREFIX}:{rid}", "cancel", "0")
+                    return
+                    
+                socketio.sleep(1)
+                remaining = (end_time_local - datetime.utcnow()).total_seconds()
+
+            logger.info(f"[TIMER] Timer for {rid} ended.")
+            room = rooms_collection.find_one({"roomId": rid})
+            if not room:
+                return
+            
+            current_phase = room.get('gamePhase')
+            
+            if current_phase == 'memeSelection':
+                logger.info(f"[TIMER] Forcing {rid} from 'memeSelection' to 'memeReveal'")
+                _update_and_broadcast_state(rid, {}, "memeReveal")
+
+        except Exception as e:
+            logger.error(f"[TIMER] Error in timer worker for {rid}: {e}")
+
+    socketio.start_background_task(timer_worker, room_id, end_time)
+
+    socketio.emit('timerStarted', {
+        'duration': duration,
+        'endTime': end_time.isoformat()
+    }, to=room_id)
+
+def stop_game_timer(room_id):
+    """Stops the timer for a room (e.g., all players submitted)"""
+    logger.info(f"[TIMER] Stopping timer for {room_id}")
+    cancel_timer(room_id) # From your Redis helpers
+
+def get_remaining_time(room_id):
+    """Get remaining time for a room's timer"""
+    try:
+        if redis_client:
+            end_iso = redis_client.hget(f"{TIMER_PREFIX}:{room_id}", "end_time")
+            if end_iso:
+                end_dt = datetime.fromisoformat(end_iso)
+                remaining = (end_dt - datetime.utcnow()).total_seconds()
+                return max(0, int(remaining))
+    except Exception as e:
+        logger.error(f"get_remaining_time error: {e}")
+    return 0
 
 # Periodic cleanup of old rooms and sessions
 def cleanup_old_data():
@@ -2325,67 +2442,7 @@ def cleanup_old_data():
         print("[CLEANUP] Old data cleaned up successfully")
     except Exception as e:
         print(f"[CLEANUP] Error during cleanup: {str(e)}")
-
-def start_game_timer(room_id, duration=30):
-    """Start a synchronized timer for a room using eventlet-friendly background task"""
-    end_time = datetime.utcnow() + timedelta(seconds=duration)
-    set_timer(room_id, end_time.isoformat(), duration)
-
-    def timer_worker(rid: str, end_time_local: datetime):
-        try:
-            remaining = (end_time_local - datetime.utcnow()).total_seconds()
-            while remaining > 0:
-                # Check cancel flag
-                if redis_client and redis_client.hget(f"{TIMER_PREFIX}:{rid}", "cancel") == "1":
-                    return
-                socketio.sleep(min(1, remaining))
-                remaining = (end_time_local - datetime.utcnow()).total_seconds()
-
-            # Timer ended
-            room = rooms_collection.find_one({"roomId": rid})
-            if not room:
-                return
-
-            socketio.emit('timerEnded', {
-                'roomId': rid,
-                'phase': room.get('gamePhase', 'memeSelection')
-            }, to=rid)
-
-            if room.get('gamePhase') == 'memeSelection':
-                rooms_collection.update_one(
-                    {"roomId": rid},
-                    {"$set": {"gamePhase": "memeReveal"}}
-                )
-                updated_room = rooms_collection.find_one({"roomId": rid})
-                socketio.emit('gameStateUpdate', json_safe(updated_room), to=rid)
-        except Exception as e:
-            logger.error(f"[TIMER] Error in timer worker: {e}")
-
-    socketio.start_background_task(timer_worker, room_id, end_time)
-
-    socketio.emit('timerStarted', {
-        'roomId': room_id,
-        'duration': duration,
-        'endTime': end_time.isoformat()
-    }, to=room_id)
-
-def stop_game_timer(room_id):
-    """Stop the timer for a room"""
-    cancel_timer(room_id)
-
-def get_remaining_time(room_id):
-    """Get remaining time for a room's timer"""
-    try:
-        if redis_client:
-            end_iso = redis_client.hget(f"{TIMER_PREFIX}:{room_id}", "end_time")
-            if end_iso:
-                end_dt = datetime.fromisoformat(end_iso)
-                remaining = (end_dt - datetime.utcnow()).total_seconds()
-                return max(0, int(remaining))
-    except Exception as e:
-        logger.error(f"get_remaining_time error: {e}")
-    return 0
-
+        
 # Schedule cleanup every hour using eventlet-friendly task
 def periodic_cleanup_worker():
     while True:
