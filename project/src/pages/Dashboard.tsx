@@ -1,10 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, Users, LogOut, History, Trophy, TrendingUp, Star, Calendar, Award } from 'lucide-react';
+import { 
+  PlusCircle, Users, LogOut, History, Trophy, 
+  TrendingUp, Star, Calendar, Award, Loader2 
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
-// Built-in Button Component
+
+// --- Types for our Live Data ---
+interface DashboardStats {
+  totalGames: number;
+  gamesHosted: number;
+  totalWins: number;
+  winRate: string;
+  bestScoreDisplay: string;
+  bestScoreTrend: string;
+}
+
+// --- Built-in Button Component ---
 interface ButtonProps {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'outline';
@@ -45,10 +59,10 @@ const Button: React.FC<ButtonProps> = ({
   );
 };
 
-// Stats Card Component
+// --- Stats Card Component ---
 interface StatCardProps {
   title: string;
-  value: string;
+  value: string | number;
   icon: React.ReactNode;
   trend?: string;
   trendDirection?: 'up' | 'down';
@@ -60,33 +74,63 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, trendDir
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100"
+      className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 flex flex-col justify-between"
     >
-      <div className="flex items-center justify-between mb-4">
-        <div className="p-3 bg-[#FFDDAB] rounded-lg">
-          {icon}
-        </div>
-        {trend && (
-          <div className={`flex items-center text-sm ${trendDirection === 'up' ? 'text-[#5F8B4C]' : 'text-red-500'}`}>
-            <TrendingUp size={16} className="mr-1" />
-            {trend}
-          </div>
-        )}
-      </div>
       <div>
-        <p className="font-courier text-[#131010] text-sm opacity-70">{title}</p>
-        <p className="font-poppins text-[#D98324] text-3xl font-bold mt-1">{value}</p>
+        <div className="flex items-center justify-between mb-4">
+          <div className="p-3 bg-[#FFDDAB] rounded-lg">
+            {icon}
+          </div>
+          {trend && (
+            <div className={`flex items-center text-sm font-bold ${trendDirection === 'up' ? 'text-[#5F8B4C]' : 'text-red-500'}`}>
+              <TrendingUp size={16} className="mr-1" />
+              {trend}
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="font-courier text-[#131010] text-sm opacity-70 uppercase tracking-tighter">{title}</p>
+          <p className="font-poppins text-[#D98324] text-3xl font-bold mt-1">{value}</p>
+        </div>
       </div>
     </motion.div>
   );
 };
 
-// Main Dashboard Component
+// --- Main Dashboard Component ---
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   
-  // Mock game history data
+  // ⭐️ Live Data State (Matched to New Backend) ⭐️
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalGames: 0,
+    gamesHosted: 0,
+    totalWins: 0,
+    winRate: "0%",
+    bestScoreDisplay: "0",
+    bestScoreTrend: "0 Rounds"
+  });
+
+  // Fetch real stats from the backend
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch(`http://localhost:5000/api/user/dashboard-stats?userId=${user?.id}`);
+        const result = await response.json();
+        if (result.success) {
+          setStats(result.stats);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user stats", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id) fetchStats();
+  }, [user?.id]);
 
   const handleCreateGame = () => {
     toast.success('Redirecting to game creation...');
@@ -104,6 +148,13 @@ const Dashboard: React.FC = () => {
     navigate('/');
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FFDDAB] flex items-center justify-center">
+        <Loader2 className="w-12 h-12 text-[#5F8B4C] animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FFDDAB] py-8 px-4 sm:px-6 lg:px-8">
@@ -113,90 +164,73 @@ const Dashboard: React.FC = () => {
         transition={{ duration: 0.6 }}
         className="max-w-7xl mx-auto"
       >
-        {/* Header Section */}
+        {/* 1. Header Section */}
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
           className="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-100"
         >
-         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-  {/* Avatar & Welcome Text */}
-  <div className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-4">
-    <img 
-      src={user?.avatar || 'https://via.placeholder.com/100?text=User'} 
-      alt="Profile" 
-      className="w-20 h-20 rounded-full border-4 border-[#FFDDAB] shadow-lg object-cover"
-    />
-    <div>
-      <h1 className="font-poppins text-[#5F8B4C] text-2xl sm:text-3xl font-bold mb-1">
-        Welcome back, {user?.username || 'Game Master'}!
-      </h1>
-      <p className="font-courier text-[#131010] opacity-70 text-sm sm:text-base">
-        Ready to create some epic gaming moments?
-      </p>
-    </div>
-  </div>
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-4">
+              <img 
+                src={user?.avatar || `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${user?.username}`} 
+                alt="Profile" 
+                className="w-20 h-20 rounded-full border-4 border-[#FFDDAB] shadow-lg object-cover"
+              />
+              <div>
+                <h1 className="font-poppins text-[#5F8B4C] text-2xl sm:text-3xl font-bold mb-1">
+                  Welcome back, {user?.username || 'Game Master'}!
+                </h1>
+                <p className="font-courier text-[#131010] opacity-70 text-sm sm:text-base">
+                  Ready to create some epic gaming moments?
+                </p>
+              </div>
+            </div>
 
-  {/* Buttons */}
-  <div className="flex flex-col sm:flex-row gap-4">
-    <Button
-      variant="primary"
-      icon={<PlusCircle size={20} />}
-      onClick={handleCreateGame}
-    >
-      Create Game
-    </Button>
-    <Button
-      variant="secondary"
-      icon={<Users size={20} />}
-      onClick={handleJoinGame}
-    >
-      Join Game
-    </Button>
-    <Button
-      variant="outline"
-      icon={<LogOut size={20} />}
-      onClick={handleLogout}
-    >
-      Logout
-    </Button>
-  </div>
-</div>
-
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Button variant="primary" icon={<PlusCircle size={20} />} onClick={handleCreateGame}>
+                Create Game
+              </Button>
+              <Button variant="secondary" icon={<Users size={20} />} onClick={handleJoinGame}>
+                Join Game
+              </Button>
+              <Button variant="outline" icon={<LogOut size={20} />} onClick={handleLogout}>
+                Logout
+              </Button>
+            </div>
+          </div>
         </motion.div>
 
-        {/* Stats Grid */}
+        {/* 2. Stats Grid - The True Roastmaster Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard 
             title="Games Played" 
-            value="24" 
+            value={stats.totalGames} 
             icon={<History size={24} className="text-[#5F8B4C]" />} 
-            trend="+12%"
-            trendDirection="up"
           />
           <StatCard 
-            title="Times as Judge" 
-            value="8" 
+            title="Games Hosted (Judge)" 
+            value={stats.gamesHosted} 
             icon={<Star size={24} className="text-[#D98324]" />} 
-            trend="+5%"
-            trendDirection="up"
           />
           <StatCard 
             title="Games Won" 
-            value="7" 
+            value={stats.totalWins} 
             icon={<Trophy size={24} className="text-[#5F8B4C]" />} 
-            trend="+25%"
+            trend={`Win Rate: ${stats.winRate}`}
             trendDirection="up"
           />
           <StatCard 
             title="Best Score" 
-            value="51" 
+            value={stats.bestScoreDisplay} 
             icon={<Award size={24} className="text-[#D98324]" />} 
+            trend={stats.bestScoreTrend}
+            trendDirection="up"
           />
         </div>
 
-        {/* Featured Game Section */}
+        {/* 3. Featured Game Section */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -217,17 +251,15 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="lg:w-1/2">
               <img 
-                src="bulkmemes.jpg" 
+                src="/bulkmemes.jpg" 
                 alt="Game Night" 
                 className="w-full h-48 object-cover rounded-xl shadow-lg"
               />
             </div>
           </div>
         </motion.div>
-        
-       
 
-        {/* Achievement Section */}
+        {/* 4. Achievement Section */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -241,18 +273,22 @@ const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center p-4 bg-[#FFDDAB]/30 rounded-xl">
               <Trophy size={32} className="text-[#D98324] mx-auto mb-2" />
-              <h3 className="font-poppins text-[#5F8B4C] font-semibold">Winner</h3>
-              <p className="font-courier text-[#131010] opacity-70 text-sm">Won 3 games this week</p>
+              <h3 className="font-poppins text-[#5F8B4C] font-semibold">
+                {stats.totalWins > 5 ? 'Elite Champion' : 'Winner'}
+              </h3>
+              <p className="font-courier text-[#131010] opacity-70 text-sm">
+                Won {stats.totalWins} games total
+              </p>
             </div>
             <div className="text-center p-4 bg-[#FFDDAB]/30 rounded-xl">
               <Star size={32} className="text-[#D98324] mx-auto mb-2" />
               <h3 className="font-poppins text-[#5F8B4C] font-semibold">Rising Star</h3>
-              <p className="font-courier text-[#131010] opacity-70 text-sm">Improved score by 15%</p>
+              <p className="font-courier text-[#131010] opacity-70 text-sm">Played {stats.totalGames} games</p>
             </div>
             <div className="text-center p-4 bg-[#FFDDAB]/30 rounded-xl">
               <Users size={32} className="text-[#D98324] mx-auto mb-2" />
               <h3 className="font-poppins text-[#5F8B4C] font-semibold">Social Player</h3>
-              <p className="font-courier text-[#131010] opacity-70 text-sm">Played with 10+ friends</p>
+              <p className="font-courier text-[#131010] opacity-70 text-sm">Active in the Community</p>
             </div>
           </div>
         </motion.div>

@@ -59,11 +59,14 @@ const Chat: React.FC = () => {
   );
 };
 
+// This is the NEW, FIXED code
 const ChatMessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
   return (
     <div className="animate-fade-in">
       <div className="flex items-start">
-        <div className="font-semibold text-pink-400">{message.playerName}</div>
+        {/* ⭐️ THIS IS THE FIX ⭐️ */}
+        <div className="font-semibold text-pink-400">{message.username}</div>
+
         <div className="ml-2 text-xs text-slate-400">
           {format(new Date(message.timestamp), 'HH:mm')}
         </div>

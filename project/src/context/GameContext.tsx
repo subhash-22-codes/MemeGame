@@ -1,8 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { MEMES } from '../data/memes';
+// ⭐️ FIX: DELETED the import that caused the error.
 import { useAuth } from './AuthContext';
-import {toast} from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
+
+// -------------------------------------------------------------------
+// 1. TYPES
+// -------------------------------------------------------------------
+
 export type Player = {
   id: string;
   username: string;
@@ -16,18 +21,21 @@ export type Player = {
   isConnected?: boolean;
 };
 
-export type Meme = {
+// ⭐️ FIX: Defined the Meme type locally to resolve the import error
+export type Meme = { 
   id: string;
   url: string;
   title: string;
+  tags?: string[]; // Kept tags for future filters
 };
-
-
 
 export type MemeSubmission = {
   playerId: string;
+  username?: string;
+  avatar?: string;
   memeId: string;
   score?: number;
+  memeUrl?: string; 
 };
 
 export type FinalResult = {
@@ -39,14 +47,14 @@ export type FinalResult = {
 
 export type GameState = {
   roomId: string;
+  host: { id: string };
   players: Player[];
   currentJudge?: Player;
   currentSentence?: string;
-  roundNumber: number;
+  currentRound: number;
   totalRounds: number;
   roundsPerJudge: number;
-  timeLeft: number;
-  timerEndTime?: number; // For synchronized timer
+  timerEndTime?: number;
   finalResult?: FinalResult;
   gamePhase:
     | 'lobby'
@@ -55,9 +63,10 @@ export type GameState = {
     | 'memeSelection'
     | 'memeReveal'
     | 'scoring'
-    | 'results';
+    | 'results'
+    | 'finalResults';
   submissions: MemeSubmission[];
-  availableMemes: Meme[];
+  availableMemes: Meme[]; // Now refers to the locally defined Meme type
   sessionId?: string;
 };
 
@@ -69,8 +78,6 @@ export interface ChatMessage {
   userId: string;
   playerId: string;
 }
-
-
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error';
 
@@ -84,76 +91,152 @@ type GameSession = {
 type GameContextType = {
   gameState: GameState | null;
   isHost: boolean;
+  isJudge: boolean;
   connectionState: ConnectionState;
+  isRestoring: boolean; // For the reload bug
+  
+  // Emitters
   createRoom: (settings: { rounds: number; roundsPerJudge: number }) => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => void;
   discardRoom: () => void;
-  startJudgeSelection: () => void;
+  startGame: () => void;
+  selectJudge: (judgeId: string) => void;
   submitSentence: (sentence: string) => void;
   selectMeme: (memeId: string) => void;
   scoreMeme: (playerId: string, score: number) => void;
-  startNextRound: () => void;
-  endGame: () => void;
-  chatMessages: ChatMessage[];
+  requestNextRound: () => void;
   sendChatMessage: (message: string) => void;
-  roomId?: string;
+
+  // State
+  chatMessages: ChatMessage[];
   socket: Socket | null;
   isConnected: boolean;
-  reconnectionAttempts: number;
-  maxReconnectionAttempts: number;
-  safeEmit: (event: string, data: unknown, callback?: (response: unknown) => void) => boolean;
 };
-
+// ... rest of the file ...
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-const MAX_RECONNECTION_ATTEMPTS = 5;
-const RECONNECTION_DELAY = 2000;
 const SESSION_STORAGE_KEY = 'gameSession';
+const SOCKET_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
+
+// -------------------------------------------------------------------
+// 2. THE REDUCER (The "Brain")
+// -------------------------------------------------------------------
+
+type GameAction =
+  | { type: 'SET_CONNECTION_STATE'; payload: ConnectionState }
+  | { type: 'SET_GAME_STATE'; payload: GameState | null }
+  | { type: 'UPDATE_PLAYERS'; payload: Player[] }
+  | { type: 'SET_TIMER'; payload: { endTime: string } }
+  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
+  | { type: 'RESET_GAME' }
+  | { type: 'SET_RESTORING'; payload: boolean };
+
+interface IContextState {
+  connectionState: ConnectionState;
+  gameState: GameState | null;
+  chatMessages: ChatMessage[];
+  isRestoring: boolean;
+}
+
+const initialState: IContextState = {
+  connectionState: 'disconnected',
+  gameState: null,
+  chatMessages: [],
+  isRestoring: true, // Start in restoring state on load
+};
+
+const gameReducer = (state: IContextState, action: GameAction): IContextState => {
+  switch (action.type) {
+    case 'SET_CONNECTION_STATE':
+      return { ...state, connectionState: action.payload };
+    
+    case 'SET_GAME_STATE': { // ⭐️ Added { block scope }
+      const preservedTimer = action.payload?.gamePhase === 'memeSelection' 
+        ? state.gameState?.timerEndTime 
+        : undefined;
+
+      return {
+        ...state,
+        isRestoring: false, 
+        gameState: action.payload ? { ...action.payload, timerEndTime: preservedTimer } : null,
+      };
+    }
+
+    case 'UPDATE_PLAYERS':
+      if (!state.gameState) return state;
+      return {
+        ...state,
+        gameState: { ...state.gameState, players: action.payload },
+      };
+
+    case 'SET_TIMER': { // ⭐️ Added { block scope }
+      if (!state.gameState) return state;
+      
+      let timeString = action.payload.endTime;
+      if (!timeString.endsWith('Z')) timeString += 'Z';
+
+      return {
+        ...state,
+        gameState: {
+          ...state.gameState,
+          timerEndTime: new Date(timeString).getTime()
+        }
+      };
+    }
+
+    case 'ADD_CHAT_MESSAGE':
+      return {
+        ...state,
+        chatMessages: [...state.chatMessages, action.payload],
+      };
+
+    case 'RESET_GAME':
+      return {
+        ...state,
+        isRestoring: false,
+        gameState: null,
+        chatMessages: [],
+      };
+      
+    case 'SET_RESTORING':
+      return { ...state, isRestoring: action.payload };
+
+    default:
+      return state;
+  }
+};
+// -------------------------------------------------------------------
+// 3. THE PROVIDER (The "Body")
+// -------------------------------------------------------------------
 
 const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [isHost, setIsHost] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
-  const [reconnectionAttempts, setReconnectionAttempts] = useState(0);
-  
+  const [state, dispatch] = useReducer(gameReducer, initialState);
   const { user } = useAuth();
-
-  // Refs to persist across re-renders
   const socketRef = useRef<Socket | null>(null);
-  const reconnectionTimeoutRef = useRef<number | null>(null);
-  const clientMsgCounterRef = useRef<number>(0);
-  const lastDiscardedRoomIdRef = useRef<string | null>(null);
 
-  const isReconnectingRef = useRef(false);
-  const sessionIdRef = useRef<string | null>(null);
-  const isInitializingRef = useRef<boolean>(false);
+  // --- Derived State ---
+  const isHost = useMemo(() => {
+    if (!user || !state.gameState) return false;
+    return state.gameState.host.id === user.id;
+  }, [state.gameState, user]);
 
-  // Generate session ID
-  const generateSessionId = useCallback(() => {
-    return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+  const isJudge = useMemo(() => {
+    if (!user || !state.gameState || !state.gameState.currentJudge) return false;
+    return state.gameState.currentJudge.id === user.id;
+  }, [state.gameState, user]);
+
+
+  // --- Session Storage Helpers ---
+  const saveGameSession = useCallback((roomId: string, playerId: string, sessionId: string) => {
+    try {
+      const session: GameSession = { roomId, playerId, sessionId, timestamp: Date.now() };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    } catch (error) {
+      console.error("[SESSION] Error saving session:", error);
+    }
   }, []);
 
-  // Save game session to localStorage
-  const saveGameSession = useCallback((roomId: string, playerId: string) => {
-    if (!sessionIdRef.current) {
-      sessionIdRef.current = generateSessionId();
-    }
-    
-    const session: GameSession = {
-      roomId,
-      playerId,
-      sessionId: sessionIdRef.current,
-      timestamp: Date.now()
-    };
-    
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-    localStorage.setItem('playerId', playerId);
-  }, [generateSessionId]);
-
-  // Load game session from localStorage
   const loadGameSession = useCallback((): GameSession | null => {
     try {
       const stored = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -161,884 +244,327 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       
       const session = JSON.parse(stored) as GameSession;
       
-      // Check if session is not too old (24 hours)
-      if (Date.now() - session.timestamp > 24 * 60 * 60 * 1000) {
+      if (Date.now() - session.timestamp > 24 * 60 * 60 * 1000) { // 24hr expiry
         localStorage.removeItem(SESSION_STORAGE_KEY);
         return null;
       }
-      
       return session;
     } catch (error) {
       console.error('[SESSION] Error loading session:', error);
-      localStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
   }, []);
 
-  // Clear game session
   const clearGameSession = useCallback(() => {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    sessionIdRef.current = null;
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      console.error('[SESSION] Error clearing session:', error);
+    }
   }, []);
 
-  // Safe socket emission with retry logic
-  const safeEmit = useCallback((event: string, data: unknown, callback?: (response: unknown) => void): boolean => {
+  // --- Socket Emitter ---
+  const safeEmit = useCallback((event: string, data: unknown) => {
     if (socketRef.current?.connected) {
-      try {
-        if (callback) {
-          socketRef.current.emit(event, data, callback);
-        } else {
-          socketRef.current.emit(event, data);
-        }
-        return true;
-      } catch (error) {
-        console.error(`[SOCKET] Error emitting ${event}:`, error);
-        return false;
-      }
+      socketRef.current.emit(event, data);
+      return true;
     }
     console.warn(`[SOCKET] Cannot emit ${event}: socket not connected`);
+    toast.error("Not connected to server");
     return false;
   }, []);
 
-  // Generate idempotency token per client emission
-  const generateClientMsgId = useCallback(() => {
-    clientMsgCounterRef.current += 1;
-    return `cmsg-${Date.now()}-${clientMsgCounterRef.current}-${Math.random().toString(36).slice(2, 7)}`;
-  }, []);
-
-  // Enhanced state updater with validation
-  const updateGameState = useCallback((updater: (prev: GameState | null) => GameState | null) => {
-    setGameState((prev) => {
-      try {
-        const newState = updater(prev);
-        
-        // Validate state integrity
-        if (newState && newState.roomId && newState.players) {
-          // Save to localStorage for persistence
-          localStorage.setItem('gameState', JSON.stringify({
-            ...newState,
-            timestamp: Date.now()
-          }));
-          return newState;
-        }
-        
-        return newState;
-      } catch (error) {
-        console.error('[GAME_STATE] Error updating state:', error);
-        return prev;
-      }
-    });
-  }, []);
+  // -------------------------------------------------------------------
+  // 4. SOCKET INITIALIZATION & LISTENERS (The "Ears")
+  // -------------------------------------------------------------------
   
-
-  // Reconnection logic
-  const attemptReconnection = useCallback(() => {
-  if (isReconnectingRef.current || reconnectionAttempts >= MAX_RECONNECTION_ATTEMPTS) {
-    return;
-  }
-
-  isReconnectingRef.current = true;
-  setConnectionState('reconnecting');
-  setReconnectionAttempts(prev => prev + 1);
-
-  console.log(`[RECONNECTION] Attempt ${reconnectionAttempts + 1}/${MAX_RECONNECTION_ATTEMPTS}`);
-
-  // ✅ Clear any previous reconnection delay timers
-  if (reconnectionTimeoutRef.current) {
-    clearTimeout(reconnectionTimeoutRef.current);
-  }
-
-  reconnectionTimeoutRef.current = window.setTimeout(() => {
-    initializeSocket();
-    isReconnectingRef.current = false;
-  }, RECONNECTION_DELAY * (reconnectionAttempts + 1));
-}, [reconnectionAttempts]);
-
-  
-
-  // Initialize socket connection
   const initializeSocket = useCallback(() => {
-    if (!user) return;
+    if (socketRef.current || !user) return;
+
+    console.log('[SOCKET] Initializing connection...');
+    dispatch({ type: 'SET_CONNECTION_STATE', payload: 'connecting' });
     
-
-    // Don't create multiple connections
-    if (socketRef.current?.connected || isInitializingRef.current) {
-      console.log('[SOCKET] Connection already exists or initializing');
-      return;
-    }
-
-    console.log('[SOCKET] Initializing connection for user:', user.id);
-    setConnectionState('connecting');
-    isInitializingRef.current = true;
-
-    const socketOptions = {
+    const newSocket = io(SOCKET_URL, {
       forceNew: true,
       transports: ['websocket', 'polling'],
-      timeout: 30000,
-      reconnection: true,
-      reconnectionAttempts: MAX_RECONNECTION_ATTEMPTS,
-      reconnectionDelay: RECONNECTION_DELAY,
-      maxReconnectionAttempts: MAX_RECONNECTION_ATTEMPTS,
-      autoConnect: true
-    };
-
-    const newSocket = io(`${window.location.protocol}//${window.location.hostname}:5000`, socketOptions);
-
-    socketRef.current = newSocket;
-    setSocket(newSocket);
-
-    // Connection event handlers
-    newSocket.on('connect', () => {
-      console.log('[SOCKET] Connected:', newSocket.id);
-      setConnectionState('connected');
-      setReconnectionAttempts(0);
-      isReconnectingRef.current = false;
-      isInitializingRef.current = false;
-
-      // Clear any pending reconnection timeouts
-      if (reconnectionTimeoutRef.current) {
-        clearTimeout(reconnectionTimeoutRef.current);
-        reconnectionTimeoutRef.current = null;
-      }
-
-      // Attempt to rejoin room if we have a session
-      const session = loadGameSession();
-      if (session && session.playerId === user.id) {
-        console.log('[SOCKET] Attempting to rejoin room:', session.roomId);
-        safeEmit('rejoinRoom', {
-          roomId: session.roomId,
-          playerId: session.playerId,
-          sessionId: session.sessionId,
-          player: {
-            id: user.id,
-            username: user.username,
-            avatar: user.avatar,
-            score: 0,
-            isJudge: false,
-            isReady: true
-          }
-        });
-      }
+      reconnectionAttempts: 5,
     });
+    socketRef.current = newSocket;
 
-    newSocket.on('disconnect', (reason) => {
-      console.log('[SOCKET] Disconnected:', reason);
-      setConnectionState('disconnected');
+    // --- Core Connection Listeners ---
+   newSocket.on('connect', () => {
+  console.log('[SOCKET] Connected:', newSocket.id);
+  dispatch({ type: 'SET_CONNECTION_STATE', payload: 'connected' });
 
-      // Auto-reconnect for mobile background/lock cases
-      if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'ping timeout') {
-        console.log('[SOCKET] Unexpected disconnect, attempting reconnection');
-        if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
-          attemptReconnection();
-        } else {
-          setConnectionState('error');
-          console.error('[SOCKET] Max reconnection attempts reached');
-        }
-      }
+  // ** IMPROVED REJOIN LOGIC **
+  const session = loadGameSession();
+  
+  // We check if a session exists and belongs to the current user
+  if (session && session.playerId === user.id) {
+    console.log('[SOCKET] Attempting Rejoin for Room:', session.roomId);
+    
+    // ⭐️ Change 'joinRoom' to 'rejoinRoom' ⭐️
+    newSocket.emit('rejoinRoom', {
+      roomId: session.roomId,
+      sessionId: session.sessionId, // This is the key that Redis uses
+      userId: user.id
+    });
+  } else {
+    // If no session, we stop the loading spinner
+    dispatch({ type: 'SET_RESTORING', payload: false });
+  }
+});
+
+    newSocket.on('disconnect', () => {
+      console.log('[SOCKET] Disconnected');
+      dispatch({ type: 'SET_CONNECTION_STATE', payload: 'disconnected' });
     });
 
     newSocket.on('connect_error', (error) => {
       console.error('[SOCKET] Connection error:', error);
-      setConnectionState('error');
-      
-      if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
-        attemptReconnection();
-      }
+      dispatch({ type: 'SET_CONNECTION_STATE', payload: 'error' });
+      dispatch({ type: 'SET_RESTORING', payload: false }); // Stop restoring on error
     });
 
-    // Room event handlers with enhanced error handling
-    newSocket.on('roomJoined', (data: { roomData: Partial<GameState> & { roomId: string; currentRound?: number; players: Player[]; timeLeft?: number; submissions?: MemeSubmission[]; gamePhase?: GameState['gamePhase'] }; sessionId: string }) => {
-      console.log('[SOCKET] Room joined:', data.roomData.roomId);
-
-      const newGameState: GameState = {
-        ...(data.roomData as GameState),
-        availableMemes: MEMES,
-        submissions: data.roomData.submissions || [],
-        timeLeft: data.roomData.timeLeft || 0,
-        gamePhase: data.roomData.gamePhase || 'lobby',
-        roundNumber: data.roomData.roundNumber ?? data.roomData.currentRound ?? 0,
-        sessionId: data.sessionId
-      };
-
-      setGameState(newGameState);
-      sessionIdRef.current = data.sessionId;
-
-      const isCurrentPlayerHost = data.roomData.players.some((p: Player) => p.id === user.id && p.isHost);
-      setIsHost(isCurrentPlayerHost);
-      saveGameSession(newGameState.roomId, user.id);
-    });
-
-    newSocket.on('roomRejoined', (data: { roomData: Partial<GameState> & { roomId: string; currentRound?: number; players: Player[]; submissions?: MemeSubmission[]; timeLeft?: number }; restored: boolean }) => {
-      console.log('[SOCKET] Room rejoined:', data.roomData.roomId, 'Restored:', data.restored);
-
-      const newGameState: GameState = {
-        ...(data.roomData as GameState),
-        availableMemes: MEMES,
-        submissions: data.roomData.submissions || [],
-        timeLeft: data.roomData.timeLeft || 0,
-        roundNumber: data.roomData.roundNumber ?? data.roomData.currentRound ?? 0
-      };
-
-      setGameState(newGameState);
-
-      const isCurrentPlayerHost = data.roomData.players.some((p: Player) => p.id === user.id && p.isHost);
-      setIsHost(isCurrentPlayerHost);
-
-      if (data.restored) {
-        console.log('[SOCKET] Game state restored from server');
-      }
-    });
-
+    // --- Global Error Handler ---
     newSocket.on('error', (data: { error: string; code?: string }) => {
-      console.error('[SOCKET] Server error:', data.error);
+      console.error(`[SOCKET] Server Error: ${data.error} (Code: ${data.code})`);
+      toast.error(data.error);
       
-      // Handle specific error types
-      if (data.code === 'ROOM_NOT_FOUND') {
+      dispatch({ type: 'SET_RESTORING', payload: false }); // Stop restoring on error
+
+      if (data.code === 'ROOM_NOT_FOUND' || data.code === 'PLAYER_NOT_IN_ROOM') {
         clearGameSession();
-        alert('Room no longer exists. Redirecting to join page.');
-        setTimeout(() => {
-          window.location.href = '/join';
-        }, 100);
-      } else if (data.code === 'INVALID_SESSION') {
-        clearGameSession();
-        alert('Your session has expired. Please rejoin the room.');
-      } else {
-        alert(data.error);
+        dispatch({ type: 'RESET_GAME' });
       }
     });
 
-    // Enhanced game event handlers
-  newSocket.on('playerJoined', (players: Player[]) => {
-  console.log('[SOCKET] Player joined, updating players:', players.length);
-
-  // Debounce via microtask to avoid setState in render warnings
-  Promise.resolve().then(() => {
-    updateGameState((prev) => {
-      if (!prev) return null;
-
-      const currentPlayerId = localStorage.getItem('playerId');
-
-      const newPlayer = players.find(
-        (p) => !prev.players.some((prevP) => prevP.id === p.id)
-      );
-
-      if (newPlayer) {
-        if (newPlayer.id === currentPlayerId) {
-          toast.success('You joined the room');
-        } else {
-          toast.success(`${newPlayer.username} joined the room`);
-        }
-      }
-
-      return { ...prev, players };
+    // --- Lobby Listeners ---
+    newSocket.on('roomCreated', (data: { roomData: GameState; sessionId: string }) => {
+      console.log('[SOCKET] roomCreated:', data.roomData.roomId);
+      dispatch({ type: 'SET_GAME_STATE', payload: data.roomData });
+      saveGameSession(data.roomData.roomId, user.id, data.sessionId);
     });
-  });
-});
 
-
-
-
-     newSocket.on('playerLeft', (data: { players: Player[]; disconnectedPlayerId: string }) => {
-  console.log('[SOCKET] Player left:', data.disconnectedPlayerId);
-  console.log('[SOCKET] Updated players list:', data.players);
-
-  // Debounce via microtask to avoid setState in render warnings
-  Promise.resolve().then(() => {
-    updateGameState((prev) => {
-      if (!prev) return null;
-
-      // Find disconnected player name before updating players
-      const disconnectedPlayer = prev.players.find(p => p.id === data.disconnectedPlayerId);
-      const playerName = disconnectedPlayer?.username || 'A player';
-      
-      toast(`${playerName} left the room`);
-
-      const updatedState = { ...prev, players: data.players };
-
-      // If the disconnected player was the host, assign a new host
-      if (data.players.length > 0) {
-        const newHost = data.players[0];
-        if (newHost.id === user.id && !isHost) {
-          setIsHost(true)
-          console.log('[SOCKET] You are now the host');
-        } else if (newHost.id !== user.id && isHost) {
-          setIsHost(false);
-        }
-      } else {
-        setIsHost(false);
-      }
-
-      return updatedState;
+    newSocket.on('roomJoined', (data: { roomData: GameState; sessionId: string }) => {
+      console.log('[SOCKET] roomJoined:', data.roomData.roomId);
+      dispatch({ type: 'SET_GAME_STATE', payload: data.roomData }); 
+      saveGameSession(data.roomData.roomId, user.id, data.sessionId);
     });
-  });
-});
 
-      // Show notification about player leaving
+    newSocket.on('playerJoined', (data: { players: Player[] }) => {
+      console.log('[SOCKET] playerJoined');
+      toast.success('A player joined the lobby!');
+      dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
+    });
+
+    newSocket.on('playerLeft', (data: { players: Player[]; leftPlayerId: string }) => {
+      console.log('[SOCKET] playerLeft');
+      dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
+    });
+    
+    newSocket.on('playerDisconnected', (data: { players: Player[]; disconnectedPlayerId: string }) => {
+      console.log('[SOCKET] playerDisconnected');
+      dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
+    });
 
     newSocket.on('playerReconnected', (data: { players: Player[]; reconnectedPlayerId: string }) => {
-      console.log('[SOCKET] Player reconnected:', data.reconnectedPlayerId);
-      updateGameState((prev) => prev ? { ...prev, players: data.players } : null);
-    });
-
-    newSocket.on('playerDisconnected', (data: { playerId: string; roomId: string }) => {
-      console.log('[SOCKET] Player disconnected:', data.playerId);
-      updateGameState((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          players: prev.players.map(p => p.id === data.playerId ? { ...p, isConnected: false, lastSeen: new Date() } : p)
-        };
-      });
+      console.log('[SOCKET] playerReconnected');
+      dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
     });
 
     newSocket.on('roomDiscarded', () => {
-      console.log('[SOCKET] Room discarded by host');
-      // Remember discarded room to prevent stale re-joins
-      if (gameState?.roomId) {
-        lastDiscardedRoomIdRef.current = gameState.roomId;
-      }
-      alert('Room has been discarded by the host.');
-      
+      console.log('[SOCKET] roomDiscarded');
+      toast.error('The host has closed the room.');
       clearGameSession();
-      setGameState(null);
-      setChatMessages([]);
-      
-      setTimeout(() => {
-        newSocket.disconnect();
-        socketRef.current = null;
-        setSocket(null);
-        window.location.href = '/dashboard';
-      }, 200);
+      dispatch({ type: 'RESET_GAME' });
+      window.location.href = '/dashboard';
     });
 
-    // Game phase handlers
-    newSocket.on('gamePhaseChanged', (newPhase: GameState['gamePhase']) => {
-  console.log('[SOCKET] Game phase changed:', newPhase);
-  updateGameState((prev) =>
-    prev ? { ...prev, gamePhase: newPhase } : null
-  );
-});
-    newSocket.on('gameStateUpdate', (newState: Partial<GameState> & { currentRound?: number }) => {
-      console.log('[SOCKET] gameStateUpdate received:', newState);
-      const normalized: GameState = {
-        ...(newState as GameState),
-        roundNumber: (newState.roundNumber ?? newState.currentRound ?? 0) as number
-      };
-      updateGameState(() => normalized);
+    // --- THE *ONLY* GAME LOGIC LISTENER ---
+    newSocket.on('gameStateUpdate', (newGameState: GameState) => {
+      console.log(`[SOCKET] gameStateUpdate. New Phase: ${newGameState.gamePhase}`);
+      dispatch({ type: 'SET_GAME_STATE', payload: newGameState }); 
     });
-
-    newSocket.on('gameEnded', (payload: Partial<GameState> & { finalResult?: FinalResult }) => {
-      console.log('[SOCKET] Game ended');
-      updateGameState((prev) => {
-        const next: GameState = {
-          ...(prev || (payload as GameState)),
-          ...(payload as Partial<GameState>),
-          gamePhase: 'results',
-          finalResult: payload.finalResult ?? prev?.finalResult
-        } as GameState;
-        return next;
-      });
-      toast.success('Game finished! Showing final results.');
-    });
-
-    newSocket.on('judgeSelected', (judge: Player) => {
-      console.log('[SOCKET] Judge selected:', judge.username);
-      updateGameState((prev) =>
-        prev ? {
-          ...prev,
-          currentJudge: judge,
-          players: prev.players.map((p) => ({
-            ...p,
-            isJudge: p.id === judge.id,
-          })),
-        } : null
-      );
-    });
-
-    newSocket.on('sentenceSubmitted', (sentence: string) => {
-      console.log('[SOCKET] Sentence submitted');
-      updateGameState((prev) =>
-        prev
-          ? {
-              ...prev,
-              currentSentence: sentence,
-              gamePhase: 'memeSelection'
-            }
-          : null
-      );
-    });
-
-    newSocket.on('memeSelected', (submission: MemeSubmission) => {
-      console.log('[SOCKET] Meme selected by player:', submission.playerId);
-      updateGameState((prev) =>
-        prev ? { ...prev, submissions: [...prev.submissions, submission] } : null
-      );
-    });
-
-    newSocket.on('memeScored', ({ playerId, score }: { playerId: string; score: number }) => {
-      console.log('[SOCKET] Meme scored:', playerId, score);
-      // Update submission score locally; do NOT increment player total here to avoid double-counting.
-      // The authoritative total will arrive in the subsequent gameStateUpdate from the server.
-      updateGameState((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          submissions: prev.submissions.map((sub) =>
-            sub.playerId === playerId ? { ...sub, score } : sub
-          )
-        } as GameState;
-      });
-    });
-
-    newSocket.on('gameStarted', (roomData: Partial<GameState> & { currentRound?: number }) => {
-      console.log('[SOCKET] Game started');
-      updateGameState((prev) =>
-        prev
-          ? {
-              ...prev,
-              gamePhase: 'judgeSelection',
-              currentJudge: roomData.currentJudge,
-              roundNumber: (roomData.roundNumber ?? roomData.currentRound ?? prev.roundNumber) as number,
-              players: roomData.players || prev.players,
-            }
-          : null
-      );
-    });
-
-    newSocket.on('roundStarted', (updatedRoom: Partial<GameState> & { currentRound?: number }) => {
-      console.log('[SOCKET] Round started:', updatedRoom);
-      const normalized: GameState = {
-        ...(updatedRoom as GameState),
-        roundNumber: (updatedRoom.roundNumber ?? updatedRoom.currentRound ?? 0) as number
-      };
-      updateGameState(() => normalized);
-    });
-
+    
     newSocket.on('chatMessage', (message: ChatMessage) => {
-      // Ensure the message has the correct structure
-      const formattedMessage: ChatMessage = {
-        id: message.id || `msg-${Date.now()}-${Math.random()}`,
-        username: message.username || 'Unknown',
-        message: message.message || '',
-        timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now(),
-        userId: message.userId || '',
-        playerId: message.playerId || message.userId || '', // fallback for older clients
-      };
-
-      setChatMessages((prev) => [...prev, formattedMessage]);
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: message });
     });
-
-    // Timer event handlers
-    newSocket.on('timerStarted', (data: { roomId: string; duration: number; endTime: string }) => {
-      console.log('[SOCKET] Timer started:', data);
-      updateGameState((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          timeLeft: data.duration,
-          timerEndTime: new Date(data.endTime).getTime()
-        };
-      });
+    
+    newSocket.on('timerStarted', (data: { endTime: string }) => {
+      console.log('[SOCKET] Timer started');
+      dispatch({ type: 'SET_TIMER', payload: data });
     });
-
-    newSocket.on('timerEnded', (data: { roomId: string; phase: string }) => {
-      console.log('[SOCKET] Timer ended:', data);
-      updateGameState((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          timeLeft: 0
-        };
-      });
-    });
-
-
-    // Cleanup function
+    
     return () => {
       console.log('[SOCKET] Cleaning up connection');
-      
-      if (reconnectionTimeoutRef.current) {
-        clearTimeout(reconnectionTimeoutRef.current);
-        reconnectionTimeoutRef.current = null;
-      }
-      
       newSocket.removeAllListeners();
       newSocket.disconnect();
       socketRef.current = null;
-      setSocket(null);
-      isInitializingRef.current = false;
     };
-  }, [user, updateGameState, loadGameSession, saveGameSession, clearGameSession, safeEmit, attemptReconnection, reconnectionAttempts, isHost]);
+  }, [user, saveGameSession, loadGameSession, clearGameSession]); // 'dispatch' is stable and not needed
 
-  // Restore game session on page load
+  // Main effect to connect/disconnect socket
   useEffect(() => {
-    if (!user) return;
-
-    const session = loadGameSession();
-    if (session && session.playerId === user.id) {
-      console.log('[SESSION] Attempting to restore session for room:', session.roomId);
-      
-      // Try to rejoin the room
-      safeEmit('rejoinRoom', {
-        roomId: session.roomId,
-        playerId: session.playerId,
-        sessionId: session.sessionId,
-        player: {
-          id: user.id,
-          username: user.username,
-          avatar: user.avatar,
-          score: 0,
-          isJudge: false,
-          isReady: true
-        }
-      });
-    }
-  }, [user, loadGameSession, safeEmit]);
-
-  // Initialize socket when user is available
-  useEffect(() => {
-    if (!user) {
-      // Clear everything when user logs out
+    if (user) {
+      const cleanup = initializeSocket();
+      return cleanup;
+    } else {
+      // User logged out
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
-        setSocket(null);
       }
-      setGameState(null);
-      setChatMessages([]);
-      setConnectionState('disconnected');
+      dispatch({ type: 'RESET_GAME' });
       clearGameSession();
-      return;
     }
-
-    const cleanup = initializeSocket();
-    
-    return cleanup;
   }, [user, initializeSocket, clearGameSession]);
+  
+  // -------------------------------------------------------------------
+  // 5. EMITTER FUNCTIONS (The "Mouth")
+  // -------------------------------------------------------------------
 
-  // Attempt reconnect when app returns to foreground (mobile screen on)
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        if (!socketRef.current || !socketRef.current.connected) {
-          console.log('[SOCKET] Visibility change: trying to reconnect');
-          initializeSocket();
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [initializeSocket]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (reconnectionTimeoutRef.current) {
-        clearTimeout(reconnectionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Game action methods with enhanced error handling
-  const createRoom = async (settings: { rounds: number; roundsPerJudge: number }): Promise<string> => {
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    if (connectionState !== 'connected') {
-      throw new Error('Socket not connected. Please wait for connection.');
-    }
-
-    // Prevent duplicate room creation
-    if (gameState?.roomId) {
-      throw new Error('Already in a room. Please leave current room first.');
-    }
-
-    return new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Room creation timed out'));
-      }, 15000);
-
-      // Listen for roomCreated event
-      const handleRoomCreated = (data: { roomData: GameState; sessionId: string }) => {
-        clearTimeout(timeout);
-        console.log('[GAME] Room created successfully:', data.roomData.roomId);
-        
-        const newGameState: GameState = {
-          ...data.roomData,
-          availableMemes: MEMES,
-          submissions: data.roomData.submissions || [],
-          timeLeft: data.roomData.timeLeft || 0,
-          gamePhase: data.roomData.gamePhase || 'lobby',
-          sessionId: data.sessionId
-        };
-
-        setGameState(newGameState);
-        sessionIdRef.current = data.sessionId;
-
-        // Set host status
-        const currentPlayer = data.roomData.players.find((p: Player) => p.id === user.id);
-        const isCurrentPlayerHost = currentPlayer?.isHost === true;
-        
-        setIsHost(isCurrentPlayerHost);
-        saveGameSession(newGameState.roomId, user.id);
-
-        // Remove the event listener
-        if (socketRef.current) {
-          socketRef.current.off('roomCreated', handleRoomCreated);
-        }
-        
+  const createRoom = (settings: { rounds: number; roundsPerJudge: number }): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!user) return reject(new Error('User not authenticated'));
+      
+      socketRef.current?.once('roomCreated', (data: { roomData: GameState; sessionId: string }) => {
+        dispatch({ type: 'SET_GAME_STATE', payload: data.roomData });
+        saveGameSession(data.roomData.roomId, user.id, data.sessionId);
+        console.log('[GAME] Room created, session saved.');
         resolve(data.roomData.roomId);
-      };
-
-      // Listen for error events
-      const handleError = (data: { error: string; code?: string }) => {
-        clearTimeout(timeout);
-        console.error('[GAME] Failed to create room:', data.error);
-        
-        // Remove the event listeners
-        if (socketRef.current) {
-          socketRef.current.off('roomCreated', handleRoomCreated);
-          socketRef.current.off('error', handleError);
-        }
-        
+      });
+      
+      socketRef.current?.once('error', (data) => {
         reject(new Error(data.error));
-      };
-
-      if (socketRef.current) {
-        socketRef.current.on('roomCreated', handleRoomCreated);
-        socketRef.current.on('error', handleError);
-      }
+      });
 
       safeEmit('createRoom', {
         rounds: settings.rounds,
         roundsPerJudge: settings.roundsPerJudge,
-        host: {
-          id: user.id,
-          username: user.username,
-          avatar: user.avatar,
-          score: 0,
-          isJudge: false,
-          isReady: true,
-          isHost: true,
-        },
+        host: { id: user.id, username: user.username, avatar: user.avatar },
       });
     });
   };
 
-  const joinRoom = async (roomId: string): Promise<void> => {
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
+  const joinRoom = (roomId: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (!user) return reject(new Error('User not authenticated'));
 
-    if (connectionState !== 'connected') {
-      throw new Error('Socket not connected. Please wait for connection.');
-    }
-
-    // Prevent duplicate room joining
-    if (gameState?.roomId) {
-      if (gameState.roomId === roomId) {
-        throw new Error('Already in this room');
-      } else {
-        throw new Error('Already in another room. Please leave current room first.');
-      }
-    }
-
-    // Block joining a room that was just discarded
-    if (lastDiscardedRoomIdRef.current === roomId) {
-      clearGameSession();
-      throw new Error('Room was discarded by host');
-    }
-
-    console.log('[GAME] Joining room:', roomId);
-
-    return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Join room timed out'));
-      }, 10000);
+      const session = loadGameSession();
+      
+      socketRef.current?.once('roomJoined', () => {
+        resolve();
+      });
+      socketRef.current?.once('error', (data) => {
+        reject(new Error(data.error));
+      });
 
       safeEmit('joinRoom', {
         roomId,
-        player: {
-          id: user.id,
-          username: user.username,
-          avatar: user.avatar,
-          score: 0,
-          isJudge: false,
-          isReady: true,
-        },
-        sessionId: (loadGameSession() || { sessionId: sessionIdRef.current })?.sessionId || (() => { sessionIdRef.current = generateSessionId(); return sessionIdRef.current; })()
+        player: { id: user.id, username: user.username, avatar: user.avatar, isReady: true },
+        sessionId: session?.sessionId || null,
       });
-
-      // Listen for roomJoined event
-      const handleRoomJoined = (data: { roomData: GameState; sessionId: string }) => {
-        clearTimeout(timeout);
-        console.log('[GAME] Successfully joined room:', data.roomData.roomId);
-        
-        const newGameState: GameState = {
-          ...data.roomData,
-          availableMemes: MEMES,
-          submissions: data.roomData.submissions || [],
-          timeLeft: data.roomData.timeLeft || 0,
-          gamePhase: data.roomData.gamePhase || 'lobby',
-          sessionId: data.sessionId
-        };
-
-        setGameState(newGameState);
-        sessionIdRef.current = data.sessionId;
-
-        const isCurrentPlayerHost = data.roomData.players.some((p: Player) => p.id === user.id && p.isHost);
-        setIsHost(isCurrentPlayerHost);
-        saveGameSession(newGameState.roomId, user.id);
-
-        // Remove the event listener
-        if (socketRef.current) {
-          socketRef.current.off('roomJoined', handleRoomJoined);
-        }
-        
-        resolve();
-      };
-
-      // Listen for error events
-      const handleError = (data: { error: string; code?: string }) => {
-        clearTimeout(timeout);
-        console.error('[GAME] Failed to join room:', data.error);
-        
-        // Remove the event listeners
-        if (socketRef.current) {
-          socketRef.current.off('roomJoined', handleRoomJoined);
-          socketRef.current.off('error', handleError);
-        }
-        if (data.code === 'ROOM_NOT_FOUND') {
-          clearGameSession();
-        }
-        
-        reject(new Error(data.error));
-      };
-
-      if (socketRef.current) {
-        socketRef.current.on('roomJoined', handleRoomJoined);
-        socketRef.current.on('error', handleError);
-      }
     });
   };
 
- const leaveRoom = useCallback(() => {
-  if (!user || !gameState?.roomId || !socket) return;
+  const leaveRoom = () => {
+    if (state.gameState?.roomId && user) {
+      safeEmit('leaveRoom', { roomId: state.gameState.roomId });
+      dispatch({ type: 'RESET_GAME' });
+      clearGameSession();
+      window.location.href = '/dashboard';
+    }
+  };
 
-  console.log('[GAME] Leaving room:', gameState.roomId);
+  const discardRoom = () => {
+    if (state.gameState?.roomId) {
+      safeEmit('discardRoom', { roomId: state.gameState.roomId });
+    }
+  };
 
-  // Step 1: Listen for acknowledgment or wait a small delay
-  socket.emit('leaveRoom', {
-    roomId: gameState.roomId,
-    playerId: user.id
-  });
+  // --- Game Emitters ---
+  const startGame = () => {
+    if (state.gameState?.roomId) {
+      safeEmit('startGame', { roomId: state.gameState.roomId });
+    }
+  };
 
-  // Step 2: Allow server emit to propagate to others
-  setTimeout(() => {
-    clearGameSession();
-    setGameState(null);
-    setChatMessages([]);
-    window.location.href = '/dashboard'; // Use navigate to prevent full reload
-  }, 300); // Delay to ensure `playerLeft` is sent to others
-}, [user, gameState?.roomId, socket, clearGameSession]);
+  const selectJudge = (judgeId: string) => {
+    if (state.gameState?.roomId) {
+      safeEmit('hostSelectsJudge', { roomId: state.gameState.roomId, judgeId });
+    }
+  };
 
+  const submitSentence = (sentence: string) => {
+    if (state.gameState?.roomId) {
+      safeEmit('submitSentence', { roomId: state.gameState.roomId, sentence });
+    }
+  };
 
-  const discardRoom = useCallback(() => {
-    if (!gameState?.roomId) return;
+  const selectMeme = (memeId: string) => {
+    if (state.gameState?.roomId) {
+      safeEmit('selectMeme', { roomId: state.gameState.roomId, memeId });
+    }
+  };
 
-    console.log('[GAME] Discarding room:', gameState.roomId);
-    safeEmit('discardRoom', { roomId: gameState.roomId });
-  }, [gameState?.roomId, safeEmit]);
+  const scoreMeme = (playerId: string, score: number) => {
+    if (state.gameState?.roomId) {
+      safeEmit('scoreMeme', { roomId: state.gameState.roomId, playerId, score });
+    }
+  };
 
-  const startJudgeSelection = useCallback(() => {
-    if (!gameState?.roomId) return;
-    safeEmit('startJudgeSelection', { roomId: gameState.roomId });
-  }, [gameState?.roomId, safeEmit]);
+  const requestNextRound = () => {
+    if (state.gameState?.roomId) {
+      safeEmit('nextRound', { roomId: state.gameState.roomId });
+    }
+  };
 
-  const submitSentence = useCallback((sentence: string) => {
-    if (!gameState?.roomId) return;
-    safeEmit('submitSentence', { roomId: gameState.roomId, sentence, clientMsgId: generateClientMsgId() });
-  }, [gameState?.roomId, safeEmit, generateClientMsgId]);
-
-  const selectMeme = useCallback((memeId: string) => {
-    if (!gameState?.roomId || !user) return;
-    safeEmit('selectMeme', {
-      roomId: gameState.roomId,
+  const sendChatMessage = (message: string) => {
+  if (state.gameState?.roomId && user) {
+    const chatPayload = {
+      id: `msg-${Date.now()}`,
+      username: user.username,
+      message,
+      timestamp: Date.now(),
+      userId: user.id,
       playerId: user.id,
-      memeId,
-      clientMsgId: generateClientMsgId()
+    };
+    safeEmit('chatMessage', { 
+      roomId: state.gameState.roomId, 
+      message: chatPayload 
     });
-  }, [gameState?.roomId, user, safeEmit, generateClientMsgId]);
-
-  const scoreMeme = useCallback((playerId: string, score: number) => {
-    if (!gameState?.roomId || !user) return;
-    safeEmit('scoreMeme', {
-      roomId: gameState.roomId,
-      playerId,
-      score,
-      judgeId: user.id,
-      clientMsgId: generateClientMsgId()
-    });
-  }, [gameState?.roomId, user, safeEmit, generateClientMsgId]);
-
-  const startNextRound = useCallback(() => {
-  if (!gameState?.roomId) return;
-  safeEmit('nextRound', { roomId: gameState.roomId, clientMsgId: generateClientMsgId() });
-}, [gameState?.roomId, safeEmit, generateClientMsgId]);
-
-
-  const endGame = useCallback(() => {
-    if (!gameState?.roomId) return;
     
-    console.log('[GAME] Ending game');
-    safeEmit('endGame', { roomId: gameState.roomId });
-    clearGameSession();
-    setGameState(null);
-    setChatMessages([]);
-  }, [gameState?.roomId, safeEmit, clearGameSession]);
+  }
+};
 
- const sendChatMessage = useCallback((message: string) => {
-  if (!gameState?.roomId || !user) return;
-
-  const chatMessage: ChatMessage = {
-    id: Math.random().toString(),
-    playerId: user.id,
-    userId: user.id, // ✅ add this missing field
-    username: user.username,
-    message,
-    timestamp: new Date().getTime(),
-  };
-
-  safeEmit('chatMessage', {
-    roomId: gameState.roomId,
-    message: chatMessage,
-  });
-}, [gameState?.roomId, user, safeEmit]);
-
-
+  // -------------------------------------------------------------------
+  // 6. CONTEXT VALUE & EXPORT
+  // -------------------------------------------------------------------
+  
   const contextValue: GameContextType = {
-    gameState,
+    // State
+    connectionState: state.connectionState,
+    gameState: state.gameState,
+    chatMessages: state.chatMessages,
+    isRestoring: state.isRestoring,
     isHost,
-    connectionState,
+    isJudge,
+    isConnected: state.connectionState === 'connected',
+    socket: socketRef.current,
+
+    // Emitters
     createRoom,
     joinRoom,
     leaveRoom,
     discardRoom,
-    startJudgeSelection,
+    startGame,
+    selectJudge,
     submitSentence,
     selectMeme,
     scoreMeme,
-    startNextRound,
-    endGame,
-    chatMessages,
+    requestNextRound,
     sendChatMessage,
-    socket,
-    roomId: gameState?.roomId,
-    isConnected: connectionState === 'connected',
-    reconnectionAttempts,
-    maxReconnectionAttempts: MAX_RECONNECTION_ATTEMPTS,
-    safeEmit,
   };
 
   return (
@@ -1050,31 +576,8 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 export const useGame = (): GameContextType => {
   const context = useContext(GameContext);
-  if (context === undefined || context === null) {
-    console.error('useGame must be used within a GameProvider');
-    return {
-      gameState: null,
-      isHost: false,
-      connectionState: 'disconnected',
-      createRoom: async () => { throw new Error('Socket not ready'); },
-      joinRoom: async () => { throw new Error('Socket not ready'); },
-      leaveRoom: () => {},
-      discardRoom: () => {},
-      startJudgeSelection: () => {},
-      submitSentence: () => {},
-      selectMeme: () => {},
-      scoreMeme: () => {},
-      startNextRound: () => {},
-      endGame: () => {},
-      chatMessages: [],
-      sendChatMessage: () => {},
-      socket: null,
-      roomId: undefined,
-      isConnected: false,
-      reconnectionAttempts: 0,
-      maxReconnectionAttempts: 5,
-      safeEmit: () => false,
-    };
+  if (context === undefined) {
+    throw new Error('useGame must be used within a GameProvider');
   }
   return context;
 };

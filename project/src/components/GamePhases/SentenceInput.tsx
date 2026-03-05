@@ -1,125 +1,79 @@
 import React, { useState } from 'react';
-import { Send, Lightbulb, Shuffle } from 'lucide-react';
+import { Send } from 'lucide-react';
 
-interface SentenceInputProps {
+// Define the props that Game.tsx will pass to this component
+type SentenceInputProps = {
   onSubmit: (sentence: string) => void;
-  isSubmitting?: boolean;
-}
+};
 
-const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit, isSubmitting = false }) => {
+const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
   const [sentence, setSentence] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (sentence.trim() && !isSubmitting) {
-      onSubmit(sentence.trim());
+    if (sentence.trim().length < 5) {
+      // You can add a toast notification here later
+      console.error("Sentence is too short");
+      return;
     }
-  };
-
-  const examplePrompts = [
-    "When you realize you forgot to save your work...",
-    "Me trying to explain why I need another monitor...",
-    "When someone says they don't like pizza...",
-    "My face when I see my bank account after shopping...",
-    "When you're the only one who laughed at your own joke...",
-    "Me pretending to understand the explanation...",
-    "When you get a text from your boss on the weekend...",
-    "My reaction when someone spoils a movie..."
-  ];
-
-  const getRandomPrompt = () => {
-    const randomPrompt = examplePrompts[Math.floor(Math.random() * examplePrompts.length)];
-    setSentence(randomPrompt);
+    
+    setIsSubmitting(true);
+    // This calls the 'submitSentence' function from our context
+    onSubmit(sentence); 
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="text-center bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <h1 className="text-3xl font-bold text-[#131010] font-['Poppins'] mb-2">
-          Create Your Sentence Prompt
-        </h1>
-        <p className="text-[#131010]/70 font-mono">
-          Write a funny scenario that others will respond to with memes
-        </p>
+    <div className="bg-white/95 backdrop-blur-md rounded-2xl p-6 lg:p-8 shadow-xl border border-white/30 text-center max-w-lg mx-auto">
+      
+      {/* 1. Header */}
+      <div className="w-16 h-16 bg-gradient-to-br from-[#5F8B4C] to-[#7BA05C] rounded-full flex items-center justify-center mx-auto mb-4">
+        <Send className="w-8 h-8 text-white" />
       </div>
+      <h2 className="text-2xl lg:text-3xl font-bold text-slate-800 mb-3">
+        You are the Judge!
+      </h2>
+      <p className="text-slate-500 font-mono text-sm lg:text-base mb-6">
+        Write a funny or creative sentence for the other players to match with a meme.
+      </p>
 
-      {/* Input Form */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-8 shadow-lg border border-white/20">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-lg font-bold text-[#131010] font-['Poppins'] mb-3">
-              Your Sentence Prompt:
-            </label>
-            <textarea
-              value={sentence}
-              onChange={(e) => setSentence(e.target.value)}
-              placeholder="Type your funny sentence here... (e.g., 'When you realize it's Monday tomorrow...')"
-              className="w-full h-32 p-4 border-2 border-gray-300 rounded-xl focus:border-[#5F8B4C] focus:outline-none transition-colors duration-300 font-mono text-[#131010] placeholder-gray-400 resize-none"
-              maxLength={200}
-              disabled={isSubmitting}
-            />
-            <div className="flex justify-between items-center mt-2">
-              <span className="text-sm text-[#131010]/60 font-mono">
-                {sentence.length}/200 characters
-              </span>
-              <button
-                type="button"
-                onClick={getRandomPrompt}
-                className="flex items-center gap-2 text-[#5F8B4C] hover:text-[#5F8B4C]/80 transition-colors duration-300 font-mono text-sm"
-                disabled={isSubmitting}
-              >
-                <Shuffle className="w-4 h-4" />
-                Get Random Idea
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={!sentence.trim() || isSubmitting}
-            className="w-full bg-[#D98324] hover:bg-[#D98324]/90 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none shadow-lg font-['Poppins'] text-lg flex items-center justify-center gap-3"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Sending Prompt...
-              </>
-            ) : (
-              <>
-                <Send className="w-5 h-5" />
-                Send Prompt to Players
-              </>
-            )}
-          </button>
-        </form>
-      </div>
-
-      {/* Tips */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <div className="flex items-center gap-2 mb-4">
-          <Lightbulb className="w-5 h-5 text-[#D98324]" />
-          <h3 className="text-lg font-bold text-[#131010] font-['Poppins']">Tips for Great Prompts</h3>
-        </div>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <h4 className="font-mono font-semibold text-[#131010]">✅ Good Examples:</h4>
-            <ul className="text-sm text-[#131010]/70 font-mono space-y-1">
-              <li>• "When you pretend to understand the meeting..."</li>
-              <li>• "Me trying to eat healthy vs. seeing donuts..."</li>
-              <li>• "When WiFi goes down during important work..."</li>
-            </ul>
-          </div>
-          <div className="space-y-2">
-            <h4 className="font-mono font-semibold text-[#131010]">💡 Pro Tips:</h4>
-            <ul className="text-sm text-[#131010]/70 font-mono space-y-1">
-              <li>• Keep it relatable and funny</li>
-              <li>• Leave room for creative interpretation</li>
-              <li>• Think about everyday situations</li>
-            </ul>
+      {/* 2. The Form */}
+      <form onSubmit={handleSubmit}>
+        <div className="relative">
+          <input
+            type="text"
+            value={sentence}
+            onChange={(e) => setSentence(e.target.value)}
+            placeholder="e.g., When you see the server bill..."
+            maxLength={150}
+            disabled={isSubmitting}
+            className="w-full px-4 py-4 text-black text-lg border-2 rounded-xl transition-all duration-300 focus:outline-none focus:ring-4 bg-white/50 backdrop-blur-sm border-gray-200 focus:border-[#5F8B4C] focus:ring-[#5F8B4C]/20"
+            style={{ fontFamily: 'Courier, monospace' }}
+          />
+          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
+            {sentence.length}/150
           </div>
         </div>
-      </div>
+
+        {/* 3. The Submit Button */}
+        <button
+          type="submit"
+          disabled={isSubmitting || sentence.trim().length < 5}
+          className="w-full flex items-center justify-center gap-3 p-4 mt-4 bg-gradient-to-br from-[#D98324] to-[#C07620] text-white rounded-xl shadow-lg font-mono font-bold text-lg transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span>Submitting...</span>
+            </>
+          ) : (
+            <>
+              <Send className="w-5 h-5" />
+              <span>Submit Sentence</span>
+            </>
+          )}
+        </button>
+      </form>
     </div>
   );
 };

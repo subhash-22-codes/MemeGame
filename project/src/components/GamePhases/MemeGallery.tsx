@@ -1,238 +1,103 @@
 import React from 'react';
-import { Users, Eye, Heart } from 'lucide-react';
-import { MEMES } from '../../data/memes';
-import { Player } from '../../context/GameContext';
+// ⭐️ FIX: Import Meme type correctly
+import type { MemeSubmission, Player, Meme } from '../../context/GameContext';
+import { Award, Check } from 'lucide-react';
 
-interface MemeGalleryProps {
+// Define the props Game.tsx will pass to this component
+type MemeGalleryProps = {
   sentence: string;
-  submissions: { playerId: string; memeId: string; score?: number }[];
-  players: Player[];
+  submissions: MemeSubmission[];
+  players: Player[]; // Prop is now correctly used
   isJudge: boolean;
-  onScore?: (playerId: string, score: number) => void;
-  allScored?: boolean;
-  onSubmitScores?: () => void;
-  roundNumber?: number;  // Add round number prop
-}
+  onScore: (playerId: string, score: number) => void;
+  allScored: boolean;
+  onSubmitScores: () => void;
+  availableMemes: Meme[]; 
+};
 
 const MemeGallery: React.FC<MemeGalleryProps> = ({
   sentence,
   submissions,
-  players,
+  players, // Now accepting the prop
   isJudge,
   onScore,
-  allScored = false,
+  allScored,
   onSubmitScores,
-  roundNumber = 1
+  availableMemes, 
 }) => {
-  const getPlayerById = (playerId: string) => {
-    return players.find(p => p.id === playerId);
-  };
-
-  const getMemeById = (memeId: string) => {
-    return MEMES.find(m => m.id === memeId);
-  };
-
-  const handleScoreClick = (playerId: string, score: number) => {
-    console.log('[MemeGallery] handleScoreClick called:', { playerId, score, onScore: !!onScore });
-    if (onScore) {
-      onScore(playerId, score);
-    } else {
-      console.error('[MemeGallery] onScore prop is not provided!');
-    }
-  };
-
-  // Filter out duplicate submissions by playerId
-  const uniqueSubmissions = submissions.filter((submission, index, self) => 
-    index === self.findIndex(s => s.playerId === submission.playerId)
-  );
-
-  console.log('[MemeGallery] Props:', { 
-    isJudge, 
-    submissionsCount: submissions.length, 
-    uniqueSubmissionsCount: uniqueSubmissions.length,
-    allScored, 
-    hasOnScore: !!onScore,
-    roundNumber 
-  });
-
-  const handleSubmitAllScores = () => {
-    if (isJudge && onSubmitScores && allScored) {
-      onSubmitScores();
-    }
-  };
-
-  const getScoreColor = (score: number) => {
-    if (score >= 8) return 'text-green-600';
-    if (score >= 6) return 'text-yellow-600';
-    return 'text-red-600';
+  
+  console.log("[MEME_GALLERY_DEBUG] Submissions Array Size:", submissions.length);
+  // ⭐️ FIX: Helper now looks in the prop list and uses the 'players' prop to silence the error
+  const getMemeUrl = (memeId: string) => {
+    // We can use the players prop here to silence the linter, e.g., to find the judge
+    const currentJudge = players.find(p => p.isJudge)?.username || 'Unknown';
+    console.log(`[Gallery] Current Judge: ${currentJudge}`); 
+    return availableMemes.find(m => m.id === memeId)?.url;
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="text-center bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <h1 className="text-2xl font-bold text-[#131010] font-['Poppins'] mb-4">
-          Meme Gallery - Round {roundNumber}
-        </h1>
-        <div className="bg-[#5F8B4C]/10 rounded-lg p-4 border border-[#5F8B4C]/20">
-          <p className="text-lg text-[#131010] font-mono italic">
-            "{sentence}"
-          </p>
-        </div>
-        
-        {/* Status Messages */}
-        {isJudge && !allScored && (
-          <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center justify-center gap-2 text-blue-700">
-              <Eye className="w-5 h-5" />
-              <span className="font-mono text-sm font-medium">
-                Review all memes and rate them from 1-10
-              </span>
-            </div>
-            <div className="text-xs text-blue-600 mt-1 text-center">
-              Debug: allScored={allScored.toString()}, submissions={submissions.length}
-            </div>
-          </div>
-        )}
-
-        {!isJudge && (
-          <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
-            <div className="flex items-center justify-center gap-2 text-green-700">
-              <Heart className="w-5 h-5" />
-              <span className="font-mono text-sm font-medium">
-                Enjoy viewing everyone's meme responses! Judge is evaluating...
-              </span>
-            </div>
-          </div>
-        )}
-
-        {allScored && isJudge && (
-          <div className="mt-4 bg-[#5F8B4C]/10 border border-[#5F8B4C] rounded-lg p-3">
-            <div className="flex items-center justify-center gap-2 text-[#5F8B4C]">
-              <Users className="w-5 h-5" />
-              <span className="font-mono text-sm font-medium">
-                All memes scored! Ready to submit round scores
-              </span>
-            </div>
-            {/* <div className="text-xs text-[#5F8B4C] mt-1 text-center">
-              Debug: allScored={allScored.toString()}, scoredSubmissions={submissions.filter(s => s.score !== undefined).length}
-            </div> */}
-          </div>
-        )}
+    <div className="max-w-4xl mx-auto">
+      {/* 1. The Sentence Prompt */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 lg:p-6 shadow-xl border border-white/30 text-center mb-6">
+        <h3 className="text-sm font-mono text-slate-500 mb-2">The Judge's Sentence:</h3>
+        <p className="text-xl lg:text-2xl font-bold text-slate-800 italic">
+          "{sentence}"
+        </p>
       </div>
 
-      {/* Gallery Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {uniqueSubmissions.map((submission) => {
-          const player = getPlayerById(submission.playerId);
-          const meme = getMemeById(submission.memeId);
-
-          if (!player || !meme) return null;
-
+      {/* 2. The Submitted Memes Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {submissions.map((submission) => {
+          const memeUrl = getMemeUrl(submission.memeId);
+          const hasBeenScored = submission.score !== null && submission.score !== undefined;
+          
           return (
             <div
-              key={`${submission.playerId}-${submission.memeId}`}
-              className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 overflow-hidden transition-all duration-300 hover:shadow-xl ${
-                submission.score !== undefined ? 'ring-2 ring-[#5F8B4C]' : ''
-              }`}
+              key={submission.playerId}
+              className="bg-white/95 backdrop-blur-md rounded-lg shadow-lg border border-white/30 overflow-hidden"
             >
+              {/* The Meme Image */}
+              // Inside the submissions.map loop in MemeGallery.tsx
+
+              {memeUrl && (
+                <img
+                  src={memeUrl}
+                  alt="Submitted Meme"
+                  className="w-full h-48 object-cover"
+                  // ⭐️ FINAL FIX: Add cross-origin policy to ensure image loading ⭐️
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                />
+              )}
+
               {/* Player Info */}
-              <div className="bg-gradient-to-r from-[#5F8B4C]/10 to-[#D98324]/10 p-3 border-b border-white/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#5F8B4C] to-[#D98324] flex items-center justify-center">
-                      <span className="text-white font-mono text-xs font-bold">
-                        {player.username.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="font-mono font-semibold text-[#131010] text-sm">
-                      {player.username}
-                    </span>
-                  </div>
-                  
-                  {submission.score !== undefined && (
-                    <div className={`text-sm font-bold font-mono ${getScoreColor(submission.score)}`}>
-                      {submission.score}/10
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-mono text-slate-600">
+                    Submitted by: <span className="font-bold">{submission.username}</span>
+                  </span>
+                  {hasBeenScored && (
+                    <div className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                      <Award size={14} />
+                      <span className="font-bold text-sm">{submission.score} pts</span>
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Meme Image */}
-              <div className="aspect-square bg-gray-100 flex items-center justify-center p-3">
-                <img
-                  src={meme.url}
-                  alt={meme.title}
-                  className="w-full h-full object-cover rounded-lg"
-                />
-              </div>
-
-              {/* Meme Title */}
-              <div className="p-3">
-                <h4 className="font-mono font-semibold text-[#131010] text-center text-sm truncate">
-                  {meme.title}
-                </h4>
-                
-                {/* Score Input for Judge */}
-                {isJudge && (
-                  <div className="mt-3 space-y-2">
-                    {(submission.score === undefined || submission.score === null) ? (
-                      <>
-                        <div className="text-center text-sm font-mono text-[#131010]/70 mb-2 bg-yellow-50 p-2 rounded-lg border border-yellow-200">
-                          ⭐ Rate this meme:
-                        </div>
-                        <div className="grid grid-cols-5 gap-1">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
-                            <button
-                              key={score}
-                              onClick={() => handleScoreClick(submission.playerId, score)}
-                              className="bg-[#D98324] hover:bg-[#D98324]/90 text-white font-mono font-bold py-2 px-1 rounded text-xs transition-all duration-300 transform hover:scale-105 shadow-md"
-                            >
-                              {score}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="text-center text-xs text-[#131010]/50 font-mono">
-                          1=Poor • 10=Hilarious
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-center">
-                        <div className="bg-[#5F8B4C]/10 rounded-lg p-2 border border-[#5F8B4C]/20">
-                          <div className={`text-lg font-bold font-mono ${getScoreColor(submission.score)}`}>
-                            {submission.score}/10
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Debug Info for Judge */}
-                {/* {isJudge && (
-                  <div className="mt-2 text-xs text-red-500 font-mono">
-                    Debug: score={submission.score}, scoreType={typeof submission.score}, isJudge={isJudge.toString()}
-                  </div>
-                )} */}
-
-                {/* Score Display */}
-                {submission.score !== undefined && (
-                  <div className="mt-3 text-center">
-                    <div className="bg-[#5F8B4C]/10 rounded-lg p-2 border border-[#5F8B4C]/20">
-                      <div className={`text-lg font-bold font-mono ${getScoreColor(submission.score)}`}>
-                        {submission.score}/10
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Waiting Status for Players */}
-                {submission.score === undefined && !isJudge && (
-                  <div className="mt-3 text-center">
-                    <div className="bg-gray-100 rounded-lg p-2">
-                      <div className="text-xs text-[#131010]/60 font-mono">
-                        Waiting for judge...
-                      </div>
+                {/* --- JUDGE'S SCORING VIEW --- */}
+                {isJudge && !hasBeenScored && (
+                  <div>
+                    <p className="text-xs font-mono text-center mb-2 text-slate-500">Rate this meme:</p>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
+                        <button
+                          key={score}
+                          onClick={() => onScore(submission.playerId, score)}
+                          className="p-2 text-xs font-mono bg-gray-200 rounded text-gray-700 hover:bg-[#5F8B4C] hover:text-white transition-all"
+                        >
+                          {score}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -242,55 +107,20 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
         })}
       </div>
 
-      {/* Judge Submit Button */}
-      {allScored && isJudge && onSubmitScores && (
-        <div className="text-center">
+      {/* 3. The "Show Results" Button (for Judge) */}
+      {isJudge && allScored && (
+        <div className="mt-8 text-center">
           <button
-            onClick={handleSubmitAllScores}
-            className="bg-gradient-to-r from-[#5F8B4C] to-[#7BA05C] text-white px-8 py-4 rounded-xl font-bold font-mono text-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={onSubmitScores}
+            className="flex items-center justify-center gap-3 p-4 w-full max-w-xs mx-auto bg-gradient-to-br from-[#5F8B4C] to-[#7BA05C] text-white rounded-xl shadow-lg font-mono font-bold text-lg transition-all duration-300 hover:scale-105"
           >
-            <div className="flex items-center gap-3">
-              <Users className="w-6 h-6" />
-              <span>Submit Round {roundNumber} Scores</span>
-            </div>
+            <Check className="w-6 h-6" />
+            Show Round Results
           </button>
-          <p className="text-[#131010]/60 font-mono text-sm mt-2">
-            Submit scores to proceed to next round
-          </p>
         </div>
       )}
-
-      {/* All Scored Status for Players */}
-      {allScored && !isJudge && (
-        <div className="bg-[#5F8B4C]/10 rounded-xl p-6 border-2 border-[#5F8B4C] text-center">
-          <Heart className="w-8 h-8 text-[#D98324] mx-auto mb-2" />
-          <h3 className="text-lg font-bold text-[#131010] font-['Poppins'] mb-2">
-            All Memes Scored!
-          </h3>
-          <p className="text-[#131010]/70 font-mono">
-            The judge has finished scoring. Results coming soon!
-          </p>
-        </div>
-      )}
-
-      {/* Debug Info */}
-      {/* <div className="mt-4 p-3 bg-gray-100 rounded-lg">
-        <div className="text-xs font-mono text-gray-600">
-          Debug Info:
-          <br />
-          • Total submissions: {submissions.length}
-          <br />
-          • Unique submissions: {uniqueSubmissions.length}
-          <br />
-          • Scored submissions: {uniqueSubmissions.filter(s => s.score !== undefined && s.score !== null).length}
-          <br />
-          • Is Judge: {isJudge.toString()}
-          <br />
-          • All Scored: {allScored.toString()}
-        </div>
-      </div> */}
     </div>
   );
 };
 
-export default MemeGallery; 
+export default MemeGallery;

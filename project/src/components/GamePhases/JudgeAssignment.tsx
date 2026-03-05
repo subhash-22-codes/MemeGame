@@ -1,129 +1,107 @@
 import React from 'react';
-import { Crown, Users } from 'lucide-react';
-import { Player } from '../../context/GameContext';
+import type { Player } from '../../context/GameContext'; // Get types from context
+import { Crown, Dices } from 'lucide-react';
 
-interface JudgeAssignmentProps {
-  currentJudge: Player;
+// ⭐️ FIX: Added the missing props
+type JudgeAssignmentProps = {
+  currentJudge: Player | undefined | null;
   roundNumber: number;
   totalRounds: number;
   players: Player[];
-  onReady: () => void;
-  isCurrentUserJudge: boolean;
-}
+  onJudgeSelected: (judgeId: string) => void; // Function to call when host picks
+  isHost: boolean;
+  isCurrentUserJudge: boolean; // We get this but don't need to use it
+};
 
 const JudgeAssignment: React.FC<JudgeAssignmentProps> = ({
-  currentJudge,
-  roundNumber,
-  totalRounds,
   players,
-  onReady,
-  isCurrentUserJudge
+  onJudgeSelected,
+  isHost,
+  currentJudge, // Now we accept this prop
 }) => {
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Round Header */}
-      <div className="text-center bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <h1 className="text-3xl font-bold text-[#131010] font-['Poppins'] mb-2">
-          Round {roundNumber} of {totalRounds}
-        </h1>
-        <div className="w-32 h-1 bg-gradient-to-r from-[#5F8B4C] to-[#D98324] mx-auto rounded-full"></div>
-      </div>
+  // --- Host Logic ---
+  const handleSpinWheel = () => {
+    // Select a random player who is connected
+    const connectedPlayers = players.filter(p => p.isConnected);
+    if (connectedPlayers.length === 0) return;
+    
+    const randomPlayer = connectedPlayers[Math.floor(Math.random() * connectedPlayers.length)];
+    onJudgeSelected(randomPlayer.id);
+  };
 
-      {/* Judge Announcement */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-8 shadow-lg border border-white/20 text-center">
-        <div className="mb-6">
-          <Crown className="w-16 h-16 text-[#D98324] mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-[#131010] font-['Poppins'] mb-2">
-            {isCurrentUserJudge ? "You are the Judge!" : "The Judge has been chosen"}
-          </h2>
-          <p className="text-[#131010]/70 font-mono text-lg">
-            {isCurrentUserJudge 
-              ? "You'll create a sentence prompt for the other players to respond to with memes."
-              : `${currentJudge.username} will create a sentence prompt for you to respond to with a meme.`
-            }
-          </p>
+  const handleAssignManually = (playerId: string) => {
+    onJudgeSelected(playerId);
+  };
+
+  // --- Host View ---
+  // ⭐️ FIX: Added check for 'currentJudge'
+  // If the host is just waiting for their own pick, show the UI
+  if (isHost && !currentJudge) {
+    return (
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl p-6 lg:p-8 shadow-xl border border-white/30 text-center max-w-lg mx-auto">
+        <Crown className="w-16 h-16 text-[#5F8B4C] mx-auto mb-4" />
+        <h2 className="text-2xl lg:text-3xl font-bold text-slate-800 mb-3">
+          Select This Round's Judge
+        </h2>
+        <p className="text-slate-500 font-mono text-sm lg:text-base mb-6">
+          You are the host. Choose the next judge.
+        </p>
+
+        {/* --- Option 1: Spin the Wheel --- */}
+        <button
+          onClick={handleSpinWheel}
+          className="w-full flex items-center justify-center gap-3 p-4 bg-gradient-to-br from-[#5F8B4C] to-[#7BA05C] text-white rounded-xl shadow-lg font-mono font-bold text-lg transition-all duration-300 hover:scale-105"
+        >
+          <Dices className="w-6 h-6" />
+          Spin the Wheel
+        </button>
+
+        <div className="my-6 flex items-center">
+          <div className="flex-grow border-t border-gray-300"></div>
+          <span className="flex-shrink mx-4 text-gray-500 font-mono text-sm">OR</span>
+          <div className="flex-grow border-t border-gray-300"></div>
         </div>
 
-        {/* Judge Card */}
-        <div className="inline-block bg-gradient-to-br from-[#D98324]/20 to-[#5F8B4C]/20 rounded-xl p-6 border-2 border-[#D98324]">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#5F8B4C] to-[#D98324] flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-mono text-2xl font-bold">
-              {currentJudge.username.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <h3 className="text-xl font-bold text-[#131010] font-['Poppins'] mb-1">
-            {currentJudge.username}
-          </h3>
-          <div className="flex items-center justify-center gap-2 text-[#D98324]">
-            <Crown className="w-4 h-4" />
-            <span className="font-mono text-sm font-semibold">JUDGE</span>
-          </div>
-          <p className="text-[#131010]/70 font-mono text-sm mt-2">
-            Current Score: {currentJudge.score}
-          </p>
-        </div>
-
-        {/* Instructions */}
-        <div className="mt-8 p-4 bg-[#5F8B4C]/10 rounded-lg border border-[#5F8B4C]/20">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Users className="w-5 h-5 text-[#5F8B4C]" />
-            <span className="font-mono font-semibold text-[#131010]">How it works:</span>
-          </div>
-          <ul className="text-[#131010]/70 font-mono text-sm space-y-1">
-            <li>• The judge creates a sentence prompt</li>
-            <li>• Players select the funniest meme response</li>
-            <li>• The judge scores each meme (1-10 points)</li>
-            <li>• Highest score wins the round!</li>
-          </ul>
-        </div>
-
-        {/* Ready Button */}
-        <div className="mt-8">
-          <button
-            onClick={onReady}
-            className="bg-[#D98324] hover:bg-[#D98324]/90 text-white font-bold py-4 px-8 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg font-['Poppins'] text-lg"
-          >
-            {isCurrentUserJudge ? "Start Creating Prompt" : "Ready to Play"}
-          </button>
-        </div>
-      </div>
-
-      {/* Players Overview */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <h3 className="text-lg font-bold text-[#131010] font-['Poppins'] mb-4 text-center">
-          Players This Round
+        {/* --- Option 2: Assign Manually --- */}
+        <h3 className="text-lg font-bold text-slate-800 mb-4 font-mono">
+          Assign Manually
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {players.map((player) => (
-            <div
+            <button
               key={player.id}
-              className={`p-3 rounded-lg text-center transition-all duration-300 ${
-                player.isJudge 
-                  ? 'bg-[#D98324]/20 border-2 border-[#D98324]' 
-                  : 'bg-gray-50 border border-gray-200'
-              }`}
+              onClick={() => handleAssignManually(player.id)}
+              disabled={!player.isConnected}
+              className="p-3 bg-white/80 rounded-lg shadow-md border border-white/50 transition-all duration-200 hover:bg-white hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#5F8B4C] to-[#D98324] flex items-center justify-center mx-auto mb-2">
-                <span className="text-white font-mono text-sm font-bold">
-                  {player.username.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <p className="font-mono font-semibold text-[#131010] text-sm">
+              <img
+                src={player.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${player.username}`}
+                alt={player.username}
+                className="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-[#5F8B4C]/30"
+              />
+              <span className="text-sm font-mono font-medium text-slate-700 truncate w-full block">
                 {player.username}
-              </p>
-              <p className="font-mono text-xs text-[#131010]/60">
-                {player.score} pts
-              </p>
-              {player.isJudge && (
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <Crown className="w-3 h-3 text-[#D98324]" />
-                  <span className="text-xs font-mono text-[#D98324]">Judge</span>
-                </div>
+              </span>
+              {!player.isConnected && (
+                 <span className="text-xs text-red-500 font-mono block">Offline</span>
               )}
-            </div>
+            </button>
           ))}
         </div>
       </div>
+    );
+  }
+
+  // --- Player View (or Host after picking) ---
+  return (
+    <div className="bg-white/95 backdrop-blur-md rounded-2xl p-6 lg:p-8 shadow-xl border border-white/30 text-center max-w-lg mx-auto">
+      <div className="w-16 h-16 border-4 border-[#5F8B4C]/30 border-t-[#5F8B4C] rounded-full animate-spin mx-auto mb-6"></div>
+      <h2 className="text-xl lg:text-2xl font-bold text-slate-800 mb-3">
+        Waiting for the Host
+      </h2>
+      <p className="text-slate-500 font-mono text-sm lg:text-base">
+        The host is selecting this round's judge...
+      </p>
     </div>
   );
 };

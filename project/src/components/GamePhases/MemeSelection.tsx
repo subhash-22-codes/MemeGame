@@ -1,154 +1,96 @@
 import React, { useState } from 'react';
-import { Check, Clock } from 'lucide-react';
-import { MEMES } from '../../data/memes';
+// ⭐️ FIX: No longer imports the laggy MEMES file
+import { CheckCircle, Hourglass } from 'lucide-react';
+// ⭐️ FIX: Import useGame to get the memes from the server
+import { useGame } from '../../context/GameContext'; 
 
-interface MemeSelectionProps {
+// Define the props that Game.tsx will pass
+type MemeSelectionProps = {
   sentence: string;
   onSelect: (memeId: string) => void;
-  selectedMemeId?: string;
-  isSubmitted?: boolean;
-  timeLeft?: number;
-  isJudge?: boolean;
-  allSubmissions?: { username: string; memeId: string }[]; // for judge view
-}
+  isSubmitted: boolean;
+  timeLeft: number | undefined;
+};
 
 const MemeSelection: React.FC<MemeSelectionProps> = ({
   sentence,
   onSelect,
-  selectedMemeId,
-  isSubmitted = false,
-  timeLeft,
-  isJudge = false,
-  allSubmissions = []
+  isSubmitted,
 }) => {
-  const [hoveredMeme, setHoveredMeme] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  
+  // ⭐️ FIX: Get the 10 random memes from the game state
+  // This list comes directly from your Python GIPHY function
+  const { gameState } = useGame();
+  const visibleMemes = gameState?.availableMemes || [];
 
-  const handleMemeClick = (memeId: string) => {
-    if (!isSubmitted && !isJudge) {
-      onSelect(memeId);
-    }
+  const handleSelect = (memeId: string) => {
+    setSelectedId(memeId);
+    onSelect(memeId);
   };
+  
+  // ⭐️ FIX: All pagination logic is deleted (no more lag)
 
-  const renderMemeCard = (memeId: string, username?: string) => {
-    const meme = MEMES.find(m => m.id === memeId);
-    if (!meme) return null;
-    const isSelected = selectedMemeId === meme.id;
-    const isHovered = hoveredMeme === meme.id;
+  // --- Render Logic ---
 
+  // If player has already submitted, show a waiting screen
+  if (isSubmitted) {
     return (
-      <div
-        key={meme.id + username}
-        className={`relative group transition-all duration-300 transform ${
-          isSubmitted || isJudge ? 'cursor-default opacity-80' : 'cursor-pointer hover:scale-105'
-        } ${
-          isSelected ? 'ring-4 ring-[#D98324] ring-offset-2' : !isJudge && 'hover:ring-2 hover:ring-[#5F8B4C]'
-        }`}
-        onClick={() => handleMemeClick(meme.id)}
-        onMouseEnter={() => setHoveredMeme(meme.id)}
-        onMouseLeave={() => setHoveredMeme(null)}
-      >
-        <div className="bg-white rounded-xl shadow-lg border border-white/20 overflow-hidden">
-          <div className="aspect-square bg-gray-100 flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl p-6 lg:p-8 shadow-xl border border-white/30 text-center max-w-lg mx-auto">
+        <div className="w-16 h-16 bg-gradient-to-br from-[#5F8B4C] to-[#7BA05C] rounded-full flex items-center justify-center mx-auto mb-4">
+          <Hourglass className="w-8 h-8 text-white animate-spin" />
+        </div>
+        <h2 className="text-2xl lg:text-3xl font-bold text-slate-800 mb-3">
+          Meme Submitted!
+        </h2>
+        <p className="text-slate-500 font-mono text-sm lg:text-base mb-6">
+          Waiting for other players to choose their memes...
+        </p>
+      </div>
+    );
+  }
+
+  // If player has NOT submitted, show the gallery
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* 1. The Sentence Prompt */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 lg:p-6 shadow-xl border border-white/30 text-center mb-6">
+        <h3 className="text-sm font-mono text-slate-500 mb-2">The Judge's Sentence:</h3>
+        <p className="text-xl lg:text-2xl font-bold text-slate-800 italic">
+          "{sentence}"
+        </p>
+      </div>
+
+      {/* 2. The Meme Grid (This now renders the 10 GIPHY memes) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {visibleMemes.map((meme) => (
+          <button
+            key={meme.id}
+            onClick={() => handleSelect(meme.id)}
+            disabled={selectedId !== null}
+            className={`group relative rounded-lg overflow-hidden border-4 transition-all duration-300
+              ${selectedId === meme.id 
+                ? 'border-green-500 scale-105' 
+                : 'border-transparent hover:border-blue-500'}
+              disabled:opacity-50 disabled:cursor-not-allowed aspect-square
+            `}
+          >
             <img
               src={meme.url}
               alt={meme.title}
-              className="w-full h-full object-cover rounded-lg"
-              loading="lazy"
+              className="w-full h-full object-cover"
+              loading="lazy" 
             />
-          </div>
-
-          <div className="p-3">
-            <h3 className="font-mono font-semibold text-[#131010] text-sm text-center truncate">
-              {meme.title}
-            </h3>
-            {meme.tags && (
-              <div className="flex flex-wrap gap-1 mt-2 justify-center">
-                {meme.tags.slice(0, 2).map((tag) => (
-                  <span
-                    key={tag}
-                    className="text-xs bg-gray-100 text-[#131010]/60 px-2 py-1 rounded-full font-mono"
-                  >
-                    {tag}
-                  </span>
-                ))}
+            {selectedId === meme.id && (
+              <div className="absolute inset-0 bg-green-500/70 flex items-center justify-center">
+                <CheckCircle className="w-10 h-10 text-white" />
               </div>
             )}
-          </div>
-
-          {isSelected && !isJudge && (
-            <div className="absolute top-2 right-2 bg-[#D98324] text-white rounded-full p-1">
-              <Check className="w-4 h-4" />
-            </div>
-          )}
-
-          {(isHovered || isSelected) && !isSubmitted && !isJudge && (
-            <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center">
-              <div className="bg-white/90 rounded-lg px-3 py-1">
-                <span className="text-[#131010] font-mono text-sm font-semibold">
-                  {isSelected ? 'Selected' : 'Click to Select'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {isJudge && username && (
-          <div className="absolute bottom-2 left-2 bg-white text-black text-xs px-2 py-1 rounded-full shadow-md">
-            @{username}
-          </div>
-        )}
+          </button>
+        ))}
       </div>
-    );
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="text-center bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-white/20">
-        <h1 className="text-2xl font-bold text-[#131010] font-['Poppins'] mb-4">
-          {isJudge ? 'Judge View - Submissions' : 'Choose Your Meme Response'}
-        </h1>
-        <div className="bg-[#5F8B4C]/10 rounded-lg p-4 border border-[#5F8B4C]/20">
-          <p className="text-lg text-[#131010] font-mono italic">
-            "{sentence}"
-          </p>
-        </div>
-        {timeLeft !== undefined && (
-          <div className="mt-4 flex items-center justify-center gap-2 text-[#131010]/70">
-            <Clock className="w-4 h-4" />
-            <span className="font-mono text-sm">
-              {timeLeft > 0 ? `${timeLeft}s remaining` : 'Time\'s up!'}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {isSubmitted && !isJudge && (
-        <div className="bg-[#5F8B4C]/10 rounded-xl p-4 border-2 border-[#5F8B4C] text-center">
-          <div className="flex items-center justify-center gap-2 text-[#5F8B4C]">
-            <Check className="w-5 h-5" />
-            <span className="font-mono font-semibold">Meme submitted! Waiting for other players...</span>
-          </div>
-          <div className="mt-3 text-sm text-[#131010]/70 font-mono">
-            You'll see all memes when everyone has submitted
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {isJudge
-          ? allSubmissions.map(({ memeId, username }) =>
-              renderMemeCard(memeId, username)
-            )
-          : MEMES.map((meme) => renderMemeCard(meme.id))}
-      </div>
-
-      {!isSubmitted && !isJudge && (
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/20 text-center">
-          <p className="text-[#131010]/70 font-mono text-sm">
-            Click on a meme that best responds to the sentence prompt above. Choose wisely - you can't change your selection!
-          </p>
-        </div>
-      )}
+      
+      {/* ⭐️ FIX: "Load More" button is deleted */}
     </div>
   );
 };
