@@ -22,11 +22,13 @@ import logging
 import time
 import re
 from bson.json_util import dumps, loads
-from data.memes import MEMES
 import requests
-import random
-
-# Configure logging early (before first use)
+from services.email_service import get_thank_you_email
+from services.email_service import send_registration_otp_email, send_professional_otp_email, create_smtp_connection_with_retry, send_email
+from utils.auth_utils import validate_email_format
+from utils.game_utils import generate_unique_room_id
+from utils.session_utils import generate_session_id
+from services.game_services import get_room_with_validation, get_player_and_room, update_and_broadcast_state
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,17 @@ def delete_player_sessions(room_id: str, player_id: str):
 
 # Timer management in Redis and eventlet-friendly background task
 TIMER_PREFIX = "timer"
+
+def broadcast_state(room_id, update_payload, phase):
+    update_and_broadcast_state(
+        room_id,
+        update_payload,
+        phase,
+        rooms_collection,
+        socketio,
+        json_safe,
+        logger
+    )
 
 def set_timer(room_id: str, end_time_iso: str, duration: int):
     try:
@@ -293,88 +306,16 @@ def finalize_game(room_id: str) -> dict | None:
         logger.error(f"finalize_game error: {e}")
         return None
     
-    
-# Initialize Flask
+
 app = Flask(__name__)
 CORS(app)
 
-# Socket.IO setup (tolerant mobile timeouts)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    ping_timeout=40,    # allow more time for backgrounded mobile tabs
+    ping_timeout=40,    
     ping_interval=20
 )
-
-# Configuration
-UPLOAD_FOLDER = 'upload_pictures'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-
-# Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-def get_thank_you_email(name, message):
-    return f"""
-    <html>
-      <head>
-        <style>
-          @media only screen and (max-width: 600px) {{
-            .container {{
-              padding: 1rem !important;
-            }}
-          }}
-        </style>
-      </head>
-      <body style="margin: 0; padding: 0; background-color: #f9f9f9;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9f9f9; padding: 2rem 0;">
-          <tr>
-            <td align="center">
-              <table class="container" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; padding: 2rem;">
-                <tr>
-                  <td align="center" style="padding-bottom: 1rem;">
-                    <h1 style="margin: 0; color: #5F8B4C; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">MemeGame</h1>
-                    <p style="margin: 0; font-size: 0.9em; color: #888;">Thank you for contacting us!</p>
-                  </td>
-                </tr>
-
-                <tr>
-                  <td style="padding-top: 1.5rem;">
-                    <p style="font-size: 1.05em; line-height: 1.6; color: #333;">
-                      Hi <strong>{name}</strong>,
-                    </p>
-                    <p style="font-size: 1.05em; line-height: 1.6; color: #333;">
-                      We've received your message and are excited to hear from you. Here's what you wrote:
-                    </p>
-
-                    <div style="margin: 1rem 0; padding: 1rem; background-color: #f0f5f0; border-left: 4px solid #5F8B4C; font-style: italic; color: #444; border-radius: 8px;">
-                      {message}
-                    </div>
-
-                    <p style="font-size: 1.05em; color: #333;">
-                      Our team will review your message and get back to you as soon as possible. Stay tuned! ✨
-                    </p>
-                  </td>
-                </tr>
-
-                <tr>
-                  <td style="padding-top: 2rem; font-size: 0.9em; color: #999;">
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
-                    <p style="margin: 0;">Warm regards,</p>
-                    <p style="margin: 0;"><strong>The MemeGame Team</strong></p>
-                    <p style="margin-top: 0.5rem; font-size: 0.8em; color: #bbb;">
-                      © {datetime.now().year} MemeGame, All rights reserved.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-    </html>
-    """
-
 
 
 @app.route("/api/contact", methods=["POST"])
@@ -433,440 +374,6 @@ def handle_contact():
         logger.error(f"[CONTACT ERROR] {str(e)}")
         return jsonify({ "success": False, "error": "Server error. Please try again later." }), 500
 
-
-def get_professional_otp_template(otp, user_name=None, company_name="MemeGame"):
-    """Generate beautiful, responsive HTML email template for OTP"""
-    greeting_name = user_name if user_name else "User"
-    
-    html_template = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Password Reset - {company_name}</title>
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-            
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                line-height: 1.6;
-                color: #333333;
-                background-color: #f8fafc;
-            }}
-            
-            .email-container {{
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-                border-radius: 12px;
-                overflow: hidden;
-                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-            }}
-            
-            .header {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 40px 30px;
-                text-align: center;
-                color: white;
-            }}
-            
-            .header h1 {{
-                font-size: 28px;
-                font-weight: 700;
-                margin-bottom: 8px;
-                letter-spacing: -0.5px;
-            }}
-            
-            .header p {{
-                font-size: 16px;
-                opacity: 0.9;
-                margin: 0;
-            }}
-            
-            .content {{
-                padding: 40px 30px;
-            }}
-            
-            .greeting {{
-                font-size: 18px;
-                font-weight: 600;
-                color: #1a202c;
-                margin-bottom: 20px;
-            }}
-            
-            .message {{
-                font-size: 16px;
-                color: #4a5568;
-                margin-bottom: 30px;
-                line-height: 1.7;
-            }}
-            
-            .otp-container {{
-                background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-                border: 2px dashed #cbd5e0;
-                border-radius: 12px;
-                padding: 30px;
-                text-align: center;
-                margin: 30px 0;
-            }}
-            
-            .otp-label {{
-                font-size: 14px;
-                font-weight: 600;
-                color: #718096;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                margin-bottom: 15px;
-            }}
-            
-            .otp-code {{
-                font-size: 36px;
-                font-weight: 800;
-                color: #667eea;
-                font-family: 'Courier New', monospace;
-                letter-spacing: 8px;
-                margin: 15px 0;
-                text-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
-            }}
-            
-            .otp-note {{
-                font-size: 13px;
-                color: #a0aec0;
-                margin-top: 15px;
-            }}
-            
-            .security-notice {{
-                background-color: #fef5e7;
-                border-left: 4px solid #f6ad55;
-                padding: 20px;
-                margin: 30px 0;
-                border-radius: 0 8px 8px 0;
-            }}
-            
-            .security-notice h3 {{
-                font-size: 16px;
-                font-weight: 600;
-                color: #c05621;
-                margin-bottom: 10px;
-                display: flex;
-                align-items: center;
-            }}
-            
-            .security-notice p {{
-                font-size: 14px;
-                color: #9c4221;
-                margin: 0;
-                line-height: 1.6;
-            }}
-            
-            .footer {{
-                background-color: #f7fafc;
-                padding: 30px;
-                text-align: center;
-                border-top: 1px solid #e2e8f0;
-            }}
-            
-            .footer p {{
-                font-size: 14px;
-                color: #718096;
-                margin-bottom: 15px;
-            }}
-            
-            .divider {{
-                height: 1px;
-                background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
-                margin: 30px 0;
-            }}
-            
-            .help-section {{
-                background-color: #f0fff4;
-                border: 1px solid #9ae6b4;
-                border-radius: 8px;
-                padding: 20px;
-                margin: 20px 0;
-                text-align: center;
-            }}
-            
-            .help-section h4 {{
-                font-size: 16px;
-                font-weight: 600;
-                color: #22543d;
-                margin-bottom: 10px;
-            }}
-            
-            .help-section p {{
-                font-size: 14px;
-                color: #2f855a;
-                margin: 0;
-            }}
-            
-            .help-section a {{
-                color: #38a169;
-                text-decoration: none;
-                font-weight: 600;
-            }}
-            
-            @media only screen and (max-width: 600px) {{
-                .email-container {{
-                    margin: 10px;
-                    border-radius: 8px;
-                }}
-                
-                .header, .content, .footer {{
-                    padding: 25px 20px;
-                }}
-                
-                .otp-code {{
-                    font-size: 28px;
-                    letter-spacing: 4px;
-                }}
-                
-                .header h1 {{
-                    font-size: 24px;
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="email-container">
-            <!-- Header -->
-            <div class="header">
-                <h1>🔐 {company_name}</h1>
-                <p>Secure Password Reset</p>
-            </div>
-            
-            <!-- Main Content -->
-            <div class="content">
-                <div class="greeting">Hello {greeting_name}! 👋</div>
-                
-                <div class="message">
-                    We received a request to reset your password. To proceed with the password reset, 
-                    please use the verification code below. This code is valid for <strong>5 minutes</strong> only.
-                </div>
-                
-                <!-- OTP Section -->
-                <div class="otp-container">
-                    <div class="otp-label">Your Verification Code</div>
-                    <div class="otp-code">{otp}</div>
-                    <div class="otp-note">Enter this code in the password reset form</div>
-                </div>
-                
-                <!-- Security Notice -->
-                <div class="security-notice">
-                    <h3>🛡️ Security Notice</h3>
-                    <p>
-                        If you didn't request this password reset, please ignore this email. 
-                        Your account remains secure and no changes have been made.
-                    </p>
-                </div>
-                
-                <div class="divider"></div>
-                
-                <!-- Help Section -->
-                <div class="help-section">
-                    <h4>Need Help?</h4>
-                    <p>
-                        If you're having trouble with the password reset process, 
-                        <a href="mailto:support@memegame.com">contact our support team</a> 
-                        and we'll be happy to assist you.
-                    </p>
-                </div>
-            </div>
-            
-            <!-- Footer -->
-            <div class="footer">
-                <p>This email was sent by {company_name} Security Team</p>
-                <p>© 2024 {company_name}. All rights reserved.</p>
-                
-                <p style="font-size: 12px; color: #a0aec0; margin-top: 20px;">
-                    You received this email because you requested a password reset for your {company_name} account.
-                </p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_template
-
-def get_plain_text_template(otp, user_name=None, company_name="MemeGame"):
-    """Generate plain text version for email clients that don't support HTML"""
-    greeting_name = user_name if user_name else "User"
-    
-    plain_text = f"""
-{company_name} - Password Reset Verification
-
-Hello {greeting_name}!
-
-We received a request to reset your password. To proceed with the password reset, please use the verification code below:
-
-VERIFICATION CODE: {otp}
-
-This code is valid for 5 minutes only.
-
-SECURITY NOTICE:
-If you didn't request this password reset, please ignore this email. Your account remains secure and no changes have been made.
-
-Need help? Contact our support team at support@memegame.com
-
-Best regards,
-{company_name} Security Team
-
-© 2024 {company_name}. All rights reserved.
-
-You received this email because you requested a password reset for your {company_name} account.
-    """
-    
-    return plain_text.strip()
-
-def get_registration_otp_template(otp: str, user_name: str | None = None, company_name: str = "MemeGame") -> str:
-    """Registration OTP email with a welcoming tone."""
-    display_name = user_name or "there"
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Welcome to {company_name}!</title>
-      <style>
-        body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif; background:#f8fafc; color:#1a202c; margin:0; }}
-        .card {{ max-width: 640px; margin: 24px auto; background:#fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); overflow:hidden; }}
-        .header {{ background: linear-gradient(135deg,#5F8B4C,#D98324); color:#fff; padding: 28px 24px; text-align:center; }}
-        .content {{ padding: 28px 24px; }}
-        .otp {{ letter-spacing: 8px; font-weight: 800; font-size: 32px; color:#5F8B4C; text-align:center; margin: 16px 0; }}
-        .note {{ text-align:center; color:#4a5568; font-size:14px; }}
-        .footer {{ padding: 18px 24px; background:#f7fafc; text-align:center; color:#718096; font-size: 13px; }}
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="header">
-          <h1>🎉 Welcome to {company_name}!</h1>
-          <p>Hi {display_name}, let's verify your email to get started.</p>
-        </div>
-        <div class="content">
-          <p>Use the code below to complete your signup. It expires in <strong>5 minutes</strong>.</p>
-          <div class="otp">{otp}</div>
-          <p class="note">If you didn't request this, you can safely ignore this email.</p>
-        </div>
-        <div class="footer">© {datetime.now().year} {company_name}. All rights reserved.</div>
-      </div>
-    </body>
-    </html>
-    """
-
-def send_registration_otp_email(to_email: str, otp: str, user_name: str | None = None) -> tuple[bool, str]:
-    """Send the registration OTP using the welcoming template."""
-    try:
-        message = MIMEMultipart("alternative")
-        now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
-        message["Subject"] = f"Welcome to MemeGame 🎉 | Verify your email ({now_str})"
-        message["From"] = f"MemeGame Team <{SENDER_EMAIL}>"
-        message["To"] = to_email
-
-        html_content = get_registration_otp_template(otp, user_name, "MemeGame")
-        text_fallback = f"Welcome to MemeGame! Your verification code is {otp}. It expires in 5 minutes."
-        message.attach(MIMEText(text_fallback, "plain", "utf-8"))
-        message.attach(MIMEText(html_content, "html", "utf-8"))
-
-        server = create_smtp_connection_with_retry()
-        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
-        server.quit()
-        return True, "Email sent successfully"
-    except Exception as e:
-        logger.error(f"Failed to send registration OTP email: {str(e)}")
-        return False, str(e)
-
-def validate_email_format(email):
-    """Validate email format"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
-
-def create_smtp_connection_with_retry(max_retries=3):
-    """Create SMTP connection with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            # Create SMTP connection
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
-            
-            # Enable TLS
-            context = ssl.create_default_context()
-            server.starttls(context=context)
-            
-            # Login using .env values
-            server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-            
-            logger.info(f"SMTP connection established successfully (attempt {attempt + 1})")
-            return server
-            
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"SMTP Authentication failed: {str(e)}")
-            raise Exception("Email authentication failed. Please check credentials.")
-            
-        except smtplib.SMTPConnectError as e:
-            logger.error(f"SMTP Connection failed (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                socketio.sleep(2 * (attempt + 1))  # Eventlet-friendly backoff
-                continue
-            raise Exception("Failed to connect to email server after multiple attempts.")
-            
-        except Exception as e:
-            logger.error(f"Unexpected SMTP error (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                socketio.sleep(2 * (attempt + 1))
-                continue
-            raise Exception(f"Email service error: {str(e)}")
-    
-    raise Exception("Failed to establish SMTP connection after all retry attempts.")
-
-
-
-def send_professional_otp_email(to_email, otp, user_name=None):
-    """Send professional OTP email with HTML template"""
-    try:
-        # Create multipart message
-        message = MIMEMultipart("alternative")
-        now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
-        message["Subject"] = f"🔐 MemeGame - Password Reset Code ({now_str})"
-        message["From"] = f"MemeGame Security Team <{SENDER_EMAIL}>"
-        message["To"] = to_email
-        message["Reply-To"] = "support@memegame.com"
-        
-        # Add custom headers for better deliverability
-        message["X-Priority"] = "1"
-        message["X-MSMail-Priority"] = "High"
-        message["Importance"] = "High"
-        message["X-Mailer"] = "MemeGame Email Service v2.0"
-        
-        # Create plain text version
-        plain_text = get_plain_text_template(otp, user_name, "MemeGame")
-        text_part = MIMEText(plain_text, "plain", "utf-8")
-        
-        # Create HTML version
-        html_content = get_professional_otp_template(otp, user_name, "MemeGame")
-        html_part = MIMEText(html_content, "html", "utf-8")
-        
-        # Attach parts
-        message.attach(text_part)
-        message.attach(html_part)
-        
-        # Send email with retry logic
-        server = create_smtp_connection_with_retry()
-        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
-        server.quit()
-        
-        return True, "Email sent successfully"
-        
-    except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}")
-        return False, str(e)
 
 @app.route("/api/send-otp", methods=["POST"])
 def send_otp():
@@ -1044,25 +551,6 @@ def verify_otp():
         return jsonify({"error": "Server error"}), 500
 
 
-
-# Helper to generate a random room ID
-def generate_unique_room_id():
-    """Generate a unique 6-character room ID"""
-    attempts = 0
-    while attempts < 10:  # Prevent infinite loop
-        room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        if not rooms_collection.find_one({"roomId": room_id}):
-            print(f"[DEBUG] Generated unique room ID: {room_id} (attempt {attempts + 1})")
-            return room_id
-        attempts += 1
-        print(f"[DEBUG] Room ID {room_id} already exists, trying again...")
-    
-    # Fallback: use timestamp-based ID
-    timestamp_id = str(int(time.time()))[-6:].upper()
-    print(f"[DEBUG] Using fallback room ID: {timestamp_id}")
-    return timestamp_id
-
-# -------------------- USER ROUTES --------------------
 @app.route("/api/register", methods=["POST"])
 def register():
     """
@@ -1103,239 +591,6 @@ def register():
     logger.info(f"[REGISTER] Registration OTP sent to {email}")
     return jsonify({"message": "OTP sent to email for registration"}), 200
 
-# -------------------- EMAIL SENDING FUNCTION --------------------
-def send_email(to_email, subject, body):
-    """
-    Send a beautifully formatted HTML email to users
-    
-    Parameters:
-    - to_email (str): Recipient's email address
-    - subject (str): Email subject
-    - body (str): Plain text content (used as fallback)
-    
-    The function automatically extracts the username from the email or uses
-    any {username} placeholder in the body parameter.
-    """
-    sender_email = SENDER_EMAIL
-    password = EMAIL_PASSWORD
-    
-    # Extract username from email or body
-    username = to_email.split('@')[0]
-    if "{username}" in body:
-        username = body.split("{username}")[1].split()[0]
-    
-    # Create the HTML email template
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{subject}</title>
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap');
-            
-            body {{
-                font-family: 'Poppins', Arial, sans-serif;
-                margin: 0;
-                padding: 0;
-                color: #333333;
-                background-color: #f5f5f5;
-            }}
-            
-            .email-container {{
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-                border-radius: 8px;
-                overflow: hidden;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            }}
-            
-            .email-header {{
-                background: linear-gradient(135deg, #8B5CF6 0%, #1E40AF 100%);
-                color: white;
-                padding: 30px 20px;
-                text-align: center;
-            }}
-            
-            .email-header h1 {{
-                margin: 0;
-                font-size: 28px;
-                font-weight: 700;
-            }}
-            
-            .emoji-icon {{
-                font-size: 36px;
-                margin: 10px 0;
-            }}
-            
-            .welcome-text {{
-                font-size: 18px;
-                margin-top: 10px;
-                opacity: 0.9;
-            }}
-            
-            .email-body {{
-                padding: 30px 20px;
-                line-height: 1.6;
-            }}
-            
-            .username {{
-                font-weight: 700;
-                color: #8B5CF6;
-            }}
-            
-            .feature-section {{
-                background-color: #f9f9f9;
-                border-radius: 8px;
-                padding: 20px;
-                margin: 20px 0;
-            }}
-            
-            .feature-title {{
-                font-weight: 600;
-                color: #1E40AF;
-                margin-top: 0;
-                margin-bottom: 10px;
-                font-size: 18px;
-            }}
-            
-            .feature-list {{
-                margin: 15px 0;
-                padding-left: 20px;
-            }}
-            
-            .feature-list li {{
-                margin-bottom: 8px;
-            }}
-            
-            .button-container {{
-                text-align: center;
-                margin: 30px 0;
-            }}
-            
-            .cta-button {{
-                display: inline-block;
-                background-color: #8B5CF6;
-                color: white;
-                padding: 12px 24px;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 500;
-                letter-spacing: 0.3px;
-            }}
-            
-            .cta-button:hover {{
-                background-color: #7C3AED;
-            }}
-            
-            .divider {{
-                height: 1px;
-                background-color: #e5e7eb;
-                margin: 25px 0;
-            }}
-            
-            .email-footer {{
-                background-color: #f9f9f9;
-                padding: 20px;
-                text-align: center;
-                color: #6b7280;
-                font-size: 14px;
-            }}
-            
-            .social-icons {{
-                margin: 15px 0;
-            }}
-            
-            .social-icons a {{
-                display: inline-block;
-                margin: 0 8px;
-                color: #8B5CF6;
-                text-decoration: none;
-            }}
-            
-            @media only screen and (max-width: 600px) {{
-                .email-header h1 {{
-                    font-size: 24px;
-                }}
-                
-                .email-body {{
-                    padding: 20px 15px;
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="email-container">
-            <div class="email-header">
-                <div class="emoji-icon">🎮</div>
-                <h1>Welcome to MemeGame!</h1>
-                <p class="welcome-text">Get ready for fun, laughter, and meme madness!</p>
-            </div>
-            
-            <div class="email-body">
-                <p>Hey <span class="username">{username}</span>! 👋</p>
-                
-                <p>Thanks for joining MemeGame - where humor meets competition! We're excited to have you as part of our community.</p>
-                
-                <div class="feature-section">
-                    <h3 class="feature-title">Ready to play? Here's how it works:</h3>
-                    <ul class="feature-list">
-                        <li>Create or join a game room with friends</li>
-                        <li>Take turns being the Judge who writes funny prompts</li>
-                        <li>Choose the perfect meme to match the prompt</li>
-                        <li>Score points and laugh together!</li>
-                    </ul>
-                </div>
-                
-                <div class="button-container">
-                    <a href="#" class="cta-button">START PLAYING NOW</a>
-                </div>
-                
-                <p>Pro tip: The more friends you invite, the more fun it gets! Share your game room link to get the party started.</p>
-                
-                <div class="divider"></div>
-                
-                <p>Got questions? Need help? Feel free to reply to this email - we're here to help!</p>
-                
-                <p>Happy Meme-ing!<br>The MemeGame Team</p>
-            </div>
-            
-            <div class="email-footer">
-                <div class="social-icons">
-                    <a href="#">Twitter</a> • 
-                    <a href="#">Instagram</a> • 
-                    <a href="#">Discord</a>
-                </div>
-                <p>&copy; 2025 MemeGame. All rights reserved.</p>
-                <p>You received this email because you signed up for MemeGame.</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    # Set up the email
-    msg = MIMEMultipart()
-    msg['From'] = f"MemeGame Team <{SENDER_EMAIL}>"
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    
-    # Attach both plain text and HTML versions
-    msg.attach(MIMEText(body, 'plain'))
-    msg.attach(MIMEText(html_content, 'html'))
-
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(sender_email, password)
-            server.sendmail(sender_email, to_email, msg.as_string())
-        print(f"✅ Welcome email sent successfully to {to_email}!")
-        return True
-    except Exception as e:
-        print(f"❌ Error sending welcome email: {e}")
-        return False
     
 @app.route('/api/user/dashboard-stats', methods=['GET'])
 def get_dashboard_stats():
@@ -1448,10 +703,6 @@ def login():
         logger.error(f"[AUTH] login error: {e}")
         return jsonify({"error": "Server error"}), 500
 
-# -------------------- SOCKET.IO EVENTS --------------------
-def generate_session_id():
-    """Generate a unique session ID"""
-    return 'session-' + str(int(time.time())) + '-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
 
 def cleanup_old_sessions():
     """Clean up sessions older than 24 hours (Redis-backed)"""
@@ -1469,12 +720,7 @@ def update_player_connection_status(room_id, player_id, is_connected=True):
         {"$set": {"players.$.isConnected": is_connected, "players.$.lastSeen": datetime.utcnow()}}
     )
 
-def get_room_with_validation(room_id):
-    """Get room and validate it exists"""
-    room = rooms_collection.find_one({"roomId": room_id})
-    if not room:
-        return None, "Room not found"
-    return room, None
+
 
 def validate_player_in_room(room, player_id):
     """Validate that player is in the room"""
@@ -1492,79 +738,6 @@ def json_safe(obj):
         return {key: json_safe(value) for key, value in obj.items()}
     return obj
 
-def _get_player_and_room(sid: str, room_id: str) -> tuple[dict | None, dict | None, str | None]:
-    """
-    Utility to securely get the player and room from a socket ID.
-    Returns: (player, room, error_message)
-    """
-    try:
-        # 1. Get player_id from the socket ID
-        mapping = get_socket_mapping(sid) # This returns a dict
-        
-        # ⭐️ FIX: Handle bytes from Redis (the master bug)
-        def _val(key: str) -> str:
-            v = mapping.get(key) or mapping.get(key.encode())
-            if isinstance(v, bytes):
-                return v.decode()
-            return v or ""
-
-        player_id = _val("playerId")
-        
-        if not player_id:
-            logger.error(f"[AUTH_ERROR] No player_id found for sid {sid}. Mapping: {mapping}")
-            return None, None, "Player session not found. Please reconnect."
-
-        # 2. Get the room
-        room = rooms_collection.find_one({"roomId": room_id})
-        if not room:
-            return None, None, "Room not found."
-            
-        # 3. Get the player from the room's player list
-        player = next((p for p in room.get("players", []) if p["id"] == player_id), None)
-        if not player:
-            return None, room, "Player not in this room."
-            
-        return player, room, None
-    except Exception as e:
-        logger.error(f"[AUTH_ERROR] Exception in _get_player_and_room: {e}")
-        return None, None, "A server error occurred during authentication."
-
-
-def _update_and_broadcast_state(room_id: str, update_query: dict, new_phase: str):
-    """
-    A centralized function to update game state in Mongo
-    and broadcast the new state to all clients.
-    """
-    try:
-        if "$set" not in update_query:
-            update_query["$set"] = {}
-
-        update_query["$set"]["gamePhase"] = new_phase
-        update_query["$set"]["lastActivity"] = datetime.utcnow()
-
-        rooms_collection.update_one({"roomId": room_id}, update_query)
-
-        # ⭐️ UPDATED this query to send the new meme list
-        room = rooms_collection.find_one(
-            {"roomId": room_id},
-            {
-                "roomId": 1, "players": 1, "gamePhase": 1, "currentRound": 1, 
-                "totalRounds": 1, "currentJudge": 1, "currentSentence": 1,
-                "submissions": 1, "host": 1, "_id": 0,
-                "availableMemes": 1 # ⭐️ ADDED: Send the memes to clients
-            }
-        )
-
-        if not room:
-            logger.error(f"Failed to find room {room_id} after update")
-            return
-
-        socketio.emit('gameStateUpdate', json_safe(room), to=room_id)
-        logger.info(f"[STATE_CHANGE] Room {room_id} advanced to {new_phase}")
-
-    except Exception as e:
-        logger.error(f"Error in _update_and_broadcast_state: {e}")
-        socketio.emit("error", {"error": "A server error occurred", "code": "STATE_CHANGE_FAILED"}, to=room_id)
 
 # -------------------------------------------------------------------
 # SOCKET.IO EVENTS: CONNECTION & LOBBY
@@ -1714,7 +887,7 @@ def handle_disconnect():
         if updated_room:
             if new_host_assigned:
                 # Full state update so new host gets their UI buttons
-                _update_and_broadcast_state(room_id, {}, updated_room.get("gamePhase", "lobby"))
+                broadcast_state(room_id, {}, updated_room.get("gamePhase", "lobby"))
             else:
                 # Simple disconnection notice for player icons
                 socketio.emit('playerDisconnected', {
@@ -1754,7 +927,7 @@ def handle_create_room(data):
             "isReady": True, # ⭐️ FIX: Host is ready by default
         }
         
-        room_id = generate_unique_room_id()
+        room_id = generate_unique_room_id(rooms_collection)
         session_id = generate_session_id()
         
         room_data = {
@@ -1821,7 +994,7 @@ def handle_join_room(data):
             rejoined_from_grace = True
             logger.info(f"[REJOIN] Player {player_id} reconnected within grace period")
 
-        room, error = get_room_with_validation(room_id)
+        room, error = get_room_with_validation(room_id, rooms_collection)
         if error:
             emit("error", {"error": error, "code": "ROOM_NOT_FOUND"}, to=sid)
             return
@@ -1934,7 +1107,13 @@ def handle_start_game(data):
     sid = request.sid
     try:
         room_id = data.get("roomId")
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+                sid,
+                room_id,
+                rooms_collection,
+                get_socket_mapping,
+                logger
+            )
         
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
@@ -1978,8 +1157,7 @@ def handle_start_game(data):
             }
         }
         
-        # ⭐️ FIX: Skip judge selection entirely. Go straight to writing the prompt!
-        _update_and_broadcast_state(room_id, initial_update, "sentenceCreation")
+        broadcast_state(room_id, initial_update, "sentenceCreation")
 
     except Exception as e:
         logger.error(f"[ERROR] Error in startGame: {e}")
@@ -1990,7 +1168,6 @@ def get_memes_from_giphy():
     try:
         if not GIPHY_API_KEY:
             logger.warning("No GIPHY_API_KEY. Falling back to hardcoded memes.")
-            return random.sample(MEMES, min(len(MEMES), 10))
 
         # Call the GIPHY API to get 50 popular "reaction" GIFs
         url = "https://api.giphy.com/v1/gifs/search"
@@ -2018,8 +1195,6 @@ def get_memes_from_giphy():
 
     except Exception as e:
         logger.error(f"GIPHY API error: {e}. Falling back to hardcoded memes.")
-        # Fallback to your 15 hardcoded memes if GIPHY fails
-        return random.sample(MEMES, min(len(MEMES), 10))
 
 
 @socketio.on('submitSentence')
@@ -2038,7 +1213,13 @@ def handle_submit_sentence(data):
             emit("error", {"error": "Sentence cannot be empty", "code": "MISSING_DATA"}, to=sid)
             return
 
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
@@ -2062,7 +1243,7 @@ def handle_submit_sentence(data):
         }
 
         start_game_timer(room_id, 45)
-        _update_and_broadcast_state(room_id, sentence_update, "memeSelection")
+        broadcast_state(room_id, sentence_update, "memeSelection")
 
     except Exception as e:
         logger.error(f"[ERROR] Error in submitSentence: {str(e)}")
@@ -2075,7 +1256,13 @@ def handle_select_meme(data):
         room_id = data.get("roomId")
         meme_id = data.get("memeId") 
 
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
@@ -2126,9 +1313,9 @@ def handle_select_meme(data):
         if all_submitted:
             logger.info(f"[GAME] All players submitted in {room_id}. Moving to reveal.")
             stop_game_timer(room_id)
-            _update_and_broadcast_state(room_id, update_payload, "memeReveal")
+            broadcast_state(room_id, update_payload, "memeReveal")
         else:
-            _update_and_broadcast_state(room_id, update_payload, "memeSelection")
+            broadcast_state(room_id, update_payload, "memeSelection")
             
     except Exception as e:
         logger.error(f"[ERROR] Error in selectMeme: {str(e)}")
@@ -2144,7 +1331,13 @@ def handle_score_meme(data):
         player_id_to_score = data.get("playerId")
         score = int(data.get("score", 0))
 
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
@@ -2195,13 +1388,12 @@ def handle_score_meme(data):
                 finalize_game(room_id) 
                 
                 # Move to the Final Results screen
-                _update_and_broadcast_state(room_id, {}, "finalResults")
+                broadcast_state(room_id, {}, "finalResults")
             else:
                 logger.info(f"[ROUND_OVER] Round {current_round} done. Moving to results.")
-                _update_and_broadcast_state(room_id, {}, "results")
+                broadcast_state(room_id, {}, "results")
         else:
-            # Still more memes to score in this round
-            _update_and_broadcast_state(room_id, {}, "memeReveal")
+            broadcast_state(room_id, {}, "memeReveal")
         
     except Exception as e:
         logger.error(f"[ERROR] Error in scoreMeme: {str(e)}")
@@ -2215,7 +1407,13 @@ def handle_next_round(data):
     try:
         room_id = data.get("roomId")
         
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
             return
@@ -2234,7 +1432,7 @@ def handle_next_round(data):
             final_update = {}
             if result_doc:
                 final_update["$set"] = {"finalResult": result_doc}
-            _update_and_broadcast_state(room_id, final_update, "finalResults")
+            broadcast_state(room_id, final_update, "finalResults")
             
         else:
             # START NEXT ROUND
@@ -2252,7 +1450,7 @@ def handle_next_round(data):
                 }
             }
 
-            _update_and_broadcast_state(room_id, next_round_update, "sentenceCreation")
+            broadcast_state(room_id, next_round_update, "sentenceCreation")
             
     except Exception as e:
         logger.error(f"[ERROR] Error in nextRound: {str(e)}")
@@ -2275,7 +1473,13 @@ def handle_chat_message(data):
             return
 
         # 2. Authenticate the sender (using the helper we fixed earlier)
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         if error:
             logger.warning(f"[CHAT_AUTH_ERROR] {sid} in {room_id}: {error}")
             return
@@ -2303,7 +1507,13 @@ def handle_leave_room(data):
     sid = request.sid
     try:
         room_id = data.get('roomId')
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         
         if error:
             logger.info(f"[LEAVE] Player {sid} tried to leave, but: {error}")
@@ -2338,8 +1548,13 @@ def handle_discard_room(data):
     sid = request.sid
     try:
         room_id = data.get('roomId')
-        # ⭐️ FIX: Use the helper to authenticate the host
-        player, room, error = _get_player_and_room(sid, room_id)
+        player, room, error = get_player_and_room(
+            sid,
+            room_id,
+            rooms_collection,
+            get_socket_mapping,
+            logger
+        )
         
         if error:
             emit("error", {"error": error, "code": "AUTH_ERROR"}, to=sid)
@@ -2392,7 +1607,7 @@ def start_game_timer(room_id, duration=45):
             
             if current_phase == 'memeSelection':
                 logger.info(f"[TIMER] Forcing {rid} from 'memeSelection' to 'memeReveal'")
-                _update_and_broadcast_state(rid, {}, "memeReveal")
+                broadcast_state(rid, {}, "memeReveal")
 
         except Exception as e:
             logger.error(f"[TIMER] Error in timer worker for {rid}: {e}")
