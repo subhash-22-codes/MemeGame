@@ -1,3 +1,7 @@
+import eventlet
+eventlet.monkey_patch()
+
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -320,7 +324,7 @@ CORS(
 socketio = SocketIO(
     app,
     cors_allowed_origins=cors_origins,
-    async_mode="gevent",
+    async_mode="eventlet",
     ping_timeout=40,
     ping_interval=20
 )
