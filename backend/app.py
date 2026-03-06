@@ -1548,6 +1548,11 @@ def handle_leave_room(data):
         leave_room(room_id, sid)
 
         updated_room = rooms_collection.find_one({"roomId": room_id})
+
+        if not updated_room:
+            logger.info(f"[LEAVE] Room {room_id} already removed")
+            return
+
         emit('playerLeft', {
             "players": json_safe(updated_room.get("players", [])),
             "leftPlayerId": player['id']
