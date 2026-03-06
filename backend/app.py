@@ -1,5 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
+
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -33,12 +35,10 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
-# MongoDB Atlas setup
-# MONGODB_URI = os.getenv("MONGODB_URI")
+
 #client = MongoClient("mongodb://127.0.0.1:27017/")
 
 MONGODB_URI = os.getenv("MONGODB_URI")
-print("Mongo URI:", MONGODB_URI)
 client = MongoClient(
     MONGODB_URI,
     serverSelectionTimeoutMS=5000,
@@ -74,9 +74,8 @@ if REDIS_URL:
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
-# Helper: Rate limit using Redis (fallback to allow if Redis is unavailable)
+
 def rate_limit_ip(ip: str, period_seconds: int = 60, max_requests: int = 3) -> bool:
-    """Return True if within limit, False if rate-limited."""
     key = f"rate:{ip}"
     try:
         if redis_client:
@@ -86,11 +85,8 @@ def rate_limit_ip(ip: str, period_seconds: int = 60, max_requests: int = 3) -> b
             return current <= max_requests
     except Exception as e:
         logger.error(f"Redis rate limit error: {e}")
-    # Fallback (very basic, non-shared): allow
     return True
-# logger already configured above
 
-# Session management via Redis
 def set_active_session(session_id: str, room_id: str, player_id: str):
     try:
         if redis_client:
@@ -312,12 +308,22 @@ def finalize_game(room_id: str) -> dict | None:
         return None
     
 
+cors_origins = [
+    "http://localhost:5173",
+    "https://meme-game-six.vercel.app"
+]
+
 app = Flask(__name__)
-CORS(app)
+
+CORS(
+    app,
+    resources={r"/api/*": {"origins": cors_origins}},
+    supports_credentials=True
+)
 
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=cors_origins,
     async_mode="eventlet",
     ping_timeout=40,
     ping_interval=20
@@ -1667,16 +1673,12 @@ def cleanup_old_data():
     except Exception as e:
         print(f"[CLEANUP] Error during cleanup: {str(e)}")
         
-# Schedule cleanup every hour using eventlet-friendly task
 def periodic_cleanup_worker():
     while True:
         socketio.sleep(3600)  # 1 hour
         cleanup_old_data()
-        # Opportunistically clean timers without rooms
         try:
             if redis_client:
-                # This is lightweight and safe even on free tier
-                # We cannot scan keys reliably without perf hit; skip heavy scans
                 pass
         except Exception as e:
             logger.error(f"timer cleanup scan error: {e}")
@@ -1687,5 +1689,3 @@ socketio.start_background_task(periodic_cleanup_worker)
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
-# To run the app, use the command:
-# python app.py
