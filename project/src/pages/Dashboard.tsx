@@ -114,11 +114,17 @@ const Dashboard: React.FC = () => {
   });
 
   // Fetch real stats from the backend
+ const API_URL = import.meta.env.VITE_API_URL;
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/user/dashboard-stats?userId=${user?.id}`);
+        const response = await fetch(
+          `${API_URL}/api/user/dashboard-stats?userId=${user?.id}`
+        );
+
         const result = await response.json();
+
         if (result.success) {
           setStats(result.stats);
         }
@@ -130,7 +136,7 @@ const Dashboard: React.FC = () => {
     };
 
     if (user?.id) fetchStats();
-  }, [user?.id]);
+  }, [user?.id, API_URL]);
 
   const handleCreateGame = () => {
     toast.success('Redirecting to game creation...');

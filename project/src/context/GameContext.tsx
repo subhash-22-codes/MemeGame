@@ -1,12 +1,9 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
-// ⭐️ FIX: DELETED the import that caused the error.
+
 import { useAuth } from './AuthContext';
 import { toast } from 'react-hot-toast';
-
-// -------------------------------------------------------------------
-// 1. TYPES
-// -------------------------------------------------------------------
+import { SOCKET_URL } from '../config';
 
 export type Player = {
   id: string;
@@ -112,12 +109,13 @@ type GameContextType = {
   chatMessages: ChatMessage[];
   socket: Socket | null;
   isConnected: boolean;
+  reconnectionAttempts?: number; // Added for connection status display
+  maxReconnectionAttempts?: number; // Added for connection status display
 };
 // ... rest of the file ...
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = 'gameSession';
-const SOCKET_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
 
 // -------------------------------------------------------------------
 // 2. THE REDUCER (The "Brain")

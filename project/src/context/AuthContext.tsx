@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
-
+import { API_URL } from '../config';
 
 type User = {
   id: string;
@@ -64,7 +64,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const register = async (username: string, email: string, password: string) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/register', {
+      const response = await fetch(`${API_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password })
@@ -86,7 +86,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const login = async (email: string, password: string) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -108,7 +108,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   };
 
   const sendOtp = async (email: string, purpose: 'register' | 'reset') => {
-    const response = await fetch('/api/send-otp', {
+    const response = await fetch(`${API_URL}/api/send-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, purpose })
@@ -123,7 +123,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const verifyOtp = async (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/verify-otp', {
+      const response = await fetch(`${API_URL}/api/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params)
