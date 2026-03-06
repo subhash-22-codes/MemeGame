@@ -329,6 +329,10 @@ socketio = SocketIO(
     ping_interval=20
 )
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    logger.info("Health check ping received")
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/api/contact", methods=["POST"])
 def handle_contact():
