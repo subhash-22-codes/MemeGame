@@ -1694,6 +1694,10 @@ def periodic_cleanup_worker():
 
 socketio.start_background_task(periodic_cleanup_worker)
 
+@app.route("/")
+def health():
+    return {"status": "memegame backend running"}, 200
+
 # -------------------- MAIN --------------------
 
 if __name__ == "__main__":
