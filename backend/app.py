@@ -9,22 +9,16 @@ from dotenv import load_dotenv
 import os
 import jwt
 import random
-import string
 from bson import ObjectId
 from flask_socketio import disconnect
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from datetime import datetime, timedelta
-import ssl
 import logging
-import time
 import re
 from bson.json_util import dumps, loads
 import requests
 from services.email_service import get_thank_you_email
-from services.email_service import send_registration_otp_email, send_professional_otp_email, create_smtp_connection_with_retry, send_email
+from services.email_service import send_registration_otp_email, send_professional_otp_email, send_email
 from utils.auth_utils import validate_email_format
 from utils.game_utils import generate_unique_room_id
 from utils.session_utils import generate_session_id
@@ -34,17 +28,28 @@ logger = logging.getLogger(__name__)
 
 # Load .env variables
 load_dotenv()
+
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") 
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
 # MongoDB Atlas setup
 # MONGODB_URI = os.getenv("MONGODB_URI")
-client = MongoClient("mongodb://127.0.0.1:27017/")
+#client = MongoClient("mongodb://127.0.0.1:27017/")
+
+MONGODB_URI = os.getenv("MONGODB_URI")
+print("Mongo URI:", MONGODB_URI)
+client = MongoClient(
+    MONGODB_URI,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=20000
+)
+
 db = client["memegame"]
 users_collection = db["users"]
 rooms_collection = db["rooms"]
 otp_collection = db["otp_verifications"]
+otp_collection.create_index("expires_at", expireAfterSeconds=0)
 contact_collection = db["contact_messages"]
 sessions_collection = db["sessions"]
 game_results_collection = db["game_results"]
@@ -313,7 +318,8 @@ CORS(app)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    ping_timeout=40,    
+    async_mode="eventlet",
+    ping_timeout=40,
     ping_interval=20
 )
 
@@ -358,16 +364,7 @@ def handle_contact():
         subject = f"🙌 Thanks for Contacting MemeGame! {date_str}"
         html_content = get_thank_you_email(name, message)
 
-        message_obj = MIMEMultipart("alternative")
-        message_obj["Subject"] = subject
-        message_obj["From"] = f"MemeGame Team <{SENDER_EMAIL}>"
-        message_obj["To"] = email
-        message_obj.attach(MIMEText(html_content, "html", "utf-8"))
-
-        server = create_smtp_connection_with_retry()
-        server.sendmail(SENDER_EMAIL, email, message_obj.as_string())
-        server.quit()
-
+        send_email(email, subject, html_content)
         return jsonify({ "success": True, "message": "Message sent successfully!" }), 200
 
     except Exception as e:
@@ -449,16 +446,8 @@ def send_otp():
         return jsonify({"error": "Server error"}), 500
      
         
-# Removed deprecated email stats endpoint
 @app.route("/api/verify-otp", methods=["POST"])
 def verify_otp():
-    """
-    Verify OTP. Supports purposes:
-    - register: create user, then issue JWT
-    - login: issue JWT
-    - reset: set new password when provided
-    Body: { email, otp, purpose, username?, password? (for register/reset) }
-    """
     try:
         data = request.get_json() or {}
         email = str(data.get("email", "")).strip().lower()
@@ -473,9 +462,8 @@ def verify_otp():
         rec = otp_collection.find_one({"email": email})
         if not rec:
             return jsonify({"error": "OTP not requested"}), 400
-        if rec.get("is_used"):
-            return jsonify({"error": "OTP already used"}), 400
         if rec.get("otp") != otp:
+            otp_collection.update_one({"email": email}, {"$inc": {"attempts": 1}})
             return jsonify({"error": "Invalid OTP"}), 400
         if datetime.utcnow() > rec.get("expires_at", datetime.utcnow()):
             return jsonify({"error": "OTP expired"}), 400
@@ -498,6 +486,7 @@ def verify_otp():
             })
             user_id = str(insert.inserted_id)
             user = users_collection.find_one({"_id": insert.inserted_id})
+
         elif purpose == "reset":
             if not user:
                 return jsonify({"error": "User not found"}), 404
@@ -507,23 +496,22 @@ def verify_otp():
                 {"email": email},
                 {"$set": {"password": generate_password_hash(password)}}
             )
-            user_id = str(user["_id"])
-        else:  # login
+            otp_collection.delete_one({"email": email})
+            return jsonify({"message": "Password updated successfully"}), 200
+
+        else:
             if not user:
                 return jsonify({"error": "User not found"}), 404
             user_id = str(user["_id"])
 
-        # Mark OTP as used
-        otp_collection.update_one({"email": email}, {"$set": {"is_used": True}})
+        otp_collection.delete_one({"email": email})
 
-        # Issue JWT (valid for 7 days)
         token = jwt.encode({
             "email": email,
             "id": user_id,
             "exp": datetime.utcnow() + timedelta(days=7)
         }, JWT_SECRET_KEY, algorithm="HS256")
 
-        # Response payload
         payload_user = {
             "id": user_id,
             "username": user.get("username"),
@@ -531,7 +519,6 @@ def verify_otp():
             "avatar": user.get("avatar")
         }
 
-        # Send post-signup welcome email (registration only)
         if purpose == "register":
             try:
                 now = datetime.now()
@@ -539,11 +526,9 @@ def verify_otp():
                 subject = f"Welcome to MemeGame 🎉  |  {formatted_time}"
                 body = f"Welcome {user.get('username','player')} to MemeGame!"
                 send_email(email, subject, body)
-                logger.info(f"[WELCOME] Welcome email sent to {email}")
-            except Exception as e:
-                logger.error(f"[WELCOME] Failed to send welcome email to {email}: {e}")
+            except Exception:
+                pass
 
-        logger.info(f"[AUTH] OTP verified for {email}, purpose={purpose}")
         return jsonify({"token": token, "user": payload_user}), 200
 
     except Exception as e:
@@ -665,30 +650,34 @@ def get_dashboard_stats():
     
 @app.route("/api/login", methods=["POST"])
 def login():
-    """Password-based login only."""
     try:
         data = request.get_json() or {}
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password")
+        client_ip = request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr)
 
         if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
+            return jsonify({"error": "Invalid email or password"}), 400
+
+        if not rate_limit_ip(client_ip, period_seconds=60, max_requests=5):
+            return jsonify({"error": "Too many login attempts. Try again later."}), 429
 
         user = users_collection.find_one({"email": email})
-        if not user:
-            return jsonify({"error": "User not found"}), 404
 
-        if not check_password_hash(user.get("password", ""), password):
-            return jsonify({"error": "Incorrect password"}), 401
+        if not user or not check_password_hash(user.get("password"), password):
+            return jsonify({"error": "Invalid email or password"}), 401
 
-        # Issue JWT (valid for 7 days)
+        users_collection.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"last_login": datetime.utcnow()}}
+        )
+
         token = jwt.encode({
             "email": email,
             "id": str(user["_id"]),
             "exp": datetime.utcnow() + timedelta(days=7)
         }, JWT_SECRET_KEY, algorithm="HS256")
 
-        # Response payload
         return jsonify({
             "token": token,
             "user": {
@@ -1164,37 +1153,57 @@ def handle_start_game(data):
         emit("error", {"error": "Failed to start game", "code": "START_GAME_FAILED"}, to=sid)
 
 def get_memes_from_giphy():
-    """Fetches memes from GIPHY and formats them."""
     try:
         if not GIPHY_API_KEY:
-            logger.warning("No GIPHY_API_KEY. Falling back to hardcoded memes.")
+            logger.warning("No GIPHY_API_KEY configured")
 
-        # Call the GIPHY API to get 50 popular "reaction" GIFs
         url = "https://api.giphy.com/v1/gifs/search"
+
         params = {
             "api_key": GIPHY_API_KEY,
-            "q": "reaction", # You can change this to "meme", "fail", "lol", etc.
+            "q": "reaction",
             "limit": 50,
             "rating": "pg-13",
             "lang": "en"
         }
-        response = requests.get(url, params=params)
-        data = response.json()['data']
 
-        # Format the data to match what our frontend expects
+        response = requests.get(url, params=params, timeout=5)
+
+        if response.status_code != 200:
+            logger.error(f"GIPHY API failed with status {response.status_code}")
+            return []
+
+        payload = response.json()
+        data = payload.get("data", [])
+
+        if not data:
+            logger.warning("GIPHY returned empty results")
+            return []
+
         formatted_memes = []
-        for meme_data in data:
-            formatted_memes.append({
-                "id": meme_data['id'],
-                "url": meme_data['images']['fixed_height']['url'],
-                "title": meme_data['title'] or "Meme"
-            })
 
-        # Return 10 random memes from the 50 we fetched
-        return random.sample(formatted_memes, min(len(formatted_memes), 10))
+        for meme_data in data:
+            try:
+                formatted_memes.append({
+                    "id": meme_data["id"],
+                    "url": meme_data["images"]["fixed_height"]["url"],
+                    "title": meme_data.get("title") or "Meme"
+                })
+            except Exception:
+                continue
+
+        if not formatted_memes:
+            logger.warning("No valid memes formatted from GIPHY response")
+            return []
+
+        return random.sample(
+            formatted_memes,
+            min(len(formatted_memes), 18)
+        )
 
     except Exception as e:
-        logger.error(f"GIPHY API error: {e}. Falling back to hardcoded memes.")
+        logger.error(f"GIPHY API error: {e}")
+        return []
 
 
 @socketio.on('submitSentence')

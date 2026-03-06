@@ -1,15 +1,13 @@
 from datetime import datetime
-import smtplib
-import ssl
 import os
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-import time
+import requests
 import logging
+
 logger = logging.getLogger(__name__)
 
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+MAIL_FROM_EMAIL = os.getenv("MAIL_FROM_EMAIL")
+MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "MemeGame")
 
 
 def get_thank_you_email(name, message):
@@ -400,124 +398,85 @@ def get_registration_otp_template(otp: str, user_name: str | None = None, compan
     </html>
     """
 
-def send_registration_otp_email(to_email: str, otp: str, user_name: str | None = None) -> tuple[bool, str]:
-    """Send the registration OTP using the welcoming template."""
-    try:
-        message = MIMEMultipart("alternative")
-        now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
-        message["Subject"] = f"Welcome to MemeGame 🎉 | Verify your email ({now_str})"
-        message["From"] = f"MemeGame Team <{SENDER_EMAIL}>"
-        message["To"] = to_email
 
-        html_content = get_registration_otp_template(otp, user_name, "MemeGame")
-        text_fallback = f"Welcome to MemeGame! Your verification code is {otp}. It expires in 5 minutes."
-        message.attach(MIMEText(text_fallback, "plain", "utf-8"))
-        message.attach(MIMEText(html_content, "html", "utf-8"))
+def send_brevo_email(to_email: str, subject: str, html_content: str):
+    payload = {
+        "sender": {
+            "name": MAIL_FROM_NAME,
+            "email": MAIL_FROM_EMAIL
+        },
+        "to": [
+            {
+                "email": to_email
+            }
+        ],
+        "subject": subject,
+        "htmlContent": html_content
+    }
 
-        server = create_smtp_connection_with_retry()
-        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
-        server.quit()
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+
+    response = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        json=payload,
+        headers=headers
+    )
+
+    if response.status_code in (200, 201):
         return True, "Email sent successfully"
+
+    logger.error(response.text)
+    return False, response.text
+
+
+def send_registration_otp_email(to_email: str, otp: str, user_name: str | None = None):
+    try:
+        now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
+
+        subject = f"Welcome to MemeGame 🎉 | Verify your email ({now_str})"
+
+        html_content = get_registration_otp_template(
+            otp,
+            user_name,
+            "MemeGame"
+        )
+
+        return send_brevo_email(to_email, subject, html_content)
+
     except Exception as e:
         logger.error(f"Failed to send registration OTP email: {str(e)}")
         return False, str(e)
 
-def create_smtp_connection_with_retry(max_retries=3):
-    """Create SMTP connection with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
-
-            context = ssl.create_default_context()
-            server.starttls(context=context)
-
-            server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-
-            logger.info(f"SMTP connection established successfully (attempt {attempt + 1})")
-            return server
-
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"SMTP Authentication failed: {str(e)}")
-            raise Exception("Email authentication failed. Please check credentials.")
-
-        except smtplib.SMTPConnectError as e:
-            logger.error(f"SMTP Connection failed (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise Exception("Failed to connect to email server after multiple attempts.")
-
-        except Exception as e:
-            logger.error(f"Unexpected SMTP error (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise Exception(f"Email service error: {str(e)}")
-
-    raise Exception("Failed to establish SMTP connection after all retry attempts.")
-
 
 def send_professional_otp_email(to_email, otp, user_name=None):
-    """Send professional OTP email with HTML template"""
     try:
-        # Create multipart message
-        message = MIMEMultipart("alternative")
         now_str = datetime.now().strftime("%A %d %b %Y, %I:%M %p")
-        message["Subject"] = f"🔐 MemeGame - Password Reset Code ({now_str})"
-        message["From"] = f"MemeGame Security Team <{SENDER_EMAIL}>"
-        message["To"] = to_email
-        message["Reply-To"] = "support@memegame.com"
-        
-        # Add custom headers for better deliverability
-        message["X-Priority"] = "1"
-        message["X-MSMail-Priority"] = "High"
-        message["Importance"] = "High"
-        message["X-Mailer"] = "MemeGame Email Service v2.0"
-        
-        # Create plain text version
-        plain_text = get_plain_text_template(otp, user_name, "MemeGame")
-        text_part = MIMEText(plain_text, "plain", "utf-8")
-        
-        # Create HTML version
-        html_content = get_professional_otp_template(otp, user_name, "MemeGame")
-        html_part = MIMEText(html_content, "html", "utf-8")
-        
-        # Attach parts
-        message.attach(text_part)
-        message.attach(html_part)
-        
-        # Send email with retry logic
-        server = create_smtp_connection_with_retry()
-        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
-        server.quit()
-        
-        return True, "Email sent successfully"
-        
+
+        subject = f"🔐 MemeGame - Password Reset Code ({now_str})"
+
+        html_content = get_professional_otp_template(
+            otp,
+            user_name,
+            "MemeGame"
+        )
+
+        return send_brevo_email(to_email, subject, html_content)
+
     except Exception as e:
         logger.error(f"Failed to send email: {str(e)}")
         return False, str(e)
 
+
 def send_email(to_email, subject, body):
-    """
-    Send a beautifully formatted HTML email to users
-    
-    Parameters:
-    - to_email (str): Recipient's email address
-    - subject (str): Email subject
-    - body (str): Plain text content (used as fallback)
-    
-    The function automatically extracts the username from the email or uses
-    any {username} placeholder in the body parameter.
-    """
-    sender_email = SENDER_EMAIL
-    password = EMAIL_PASSWORD
-    
-    # Extract username from email or body
     username = to_email.split('@')[0]
+
     if "{username}" in body:
         username = body.split("{username}")[1].split()[0]
-    
-    # Create the HTML email template
+
     html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -709,23 +668,39 @@ def send_email(to_email, subject, body):
     </html>
     """
 
-    # Set up the email
-    msg = MIMEMultipart()
-    msg['From'] = f"MemeGame Team <{SENDER_EMAIL}>"
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    
-    # Attach both plain text and HTML versions
-    msg.attach(MIMEText(body, 'plain'))
-    msg.attach(MIMEText(html_content, 'html'))
+    payload = {
+        "sender": {
+            "name": MAIL_FROM_NAME,
+            "email": MAIL_FROM_EMAIL
+        },
+        "to": [
+            {
+                "email": to_email
+            }
+        ],
+        "subject": subject,
+        "htmlContent": html_content
+    }
+
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json"
+    }
 
     try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(sender_email, password)
-            server.sendmail(sender_email, to_email, msg.as_string())
-        print(f"✅ Welcome email sent successfully to {to_email}!")
-        return True
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers=headers
+        )
+
+        if response.status_code in (200, 201):
+            return True
+
+        logger.error(response.text)
+        return False
+
     except Exception as e:
-        print(f"❌ Error sending welcome email: {e}")
+        logger.error(f"Error sending email: {e}")
         return False
