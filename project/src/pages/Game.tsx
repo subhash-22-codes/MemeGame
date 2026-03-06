@@ -123,7 +123,10 @@ const Game: React.FC = () => {
   const handleMemeSelect = (memeId: string) => { selectMeme(memeId); };
   const handleMemeScore = (playerId: string, score: number) => { if (isJudge) scoreMeme(playerId, score); };
   const handleRequestNextRound = () => { requestNextRound(); };
-  const handleLeaveGame = () => { leaveRoom(); };
+  const handleLeaveGame = () => {
+  leaveRoom();
+  navigate('/dashboard');
+};
   const handleCelebrationComplete = () => { setShowJudgeCelebration(false); };
   
   const getPhaseTitle = () => {

@@ -376,7 +376,6 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       toast.error('The host has closed the room.');
       clearGameSession();
       dispatch({ type: 'RESET_GAME' });
-      window.location.href = '/dashboard';
     });
 
     // --- THE *ONLY* GAME LOGIC LISTENER ---
@@ -471,7 +470,6 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       safeEmit('leaveRoom', { roomId: state.gameState.roomId });
       dispatch({ type: 'RESET_GAME' });
       clearGameSession();
-      window.location.href = '/dashboard';
     }
   };
 
