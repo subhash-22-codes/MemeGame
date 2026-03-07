@@ -78,22 +78,22 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, trendDir
           <div className="p-2 bg-[#FFDDAB] border border-[#131010] rounded-lg shadow-[1px_1px_0px_0px_#131010]">
             {icon}
           </div>
-         {trend && (
-            <div
-              className={`inline-flex items-center text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md border border-[#131010] bg-white ${
-                trendDirection === 'up' ? 'text-[#5F8B4C]' : 'text-red-500'
-              }`}
-            >
-              <TrendingUp
-                size={10}
-                className="mr-0.5 sm:mr-1 flex-shrink-0"
-                strokeWidth={2.5}
-              />
-              <span className="truncate max-w-[60px] sm:max-w-none">
-                {trend}
-              </span>
-            </div>
-          )}
+        {trend && (
+          <div
+            className={`inline-flex items-center text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md border border-[#131010] bg-white ${
+              trendDirection === 'up' ? 'text-[#5F8B4C]' : 'text-red-500'
+            }`}
+          >
+            <TrendingUp
+              size={10}
+              className="mr-0.5 sm:mr-1 flex-shrink-0"
+              strokeWidth={2.5}
+            />
+            <span className="whitespace-nowrap">
+              {trend}
+            </span>
+          </div>
+        )}
         </div>
         <div>
           <p className="font-poppins font-semibold text-[#131010]/60 text-[11px] sm:text-xs uppercase tracking-wider mb-0.5">{title}</p>
@@ -158,13 +158,31 @@ const Dashboard: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FFDDAB] flex flex-col items-center justify-center p-4 text-center">
-        <Loader2 className="w-8 h-8 sm:w-10 sm:h-10 text-[#131010] animate-spin mb-3" strokeWidth={2.5} />
-        <p className="font-poppins font-medium text-[#131010] text-sm">Loading profile...</p>
+  return (
+    <div className="min-h-screen bg-[#FFDDAB] flex items-center justify-center p-6">
+      {/* Small & Simple Bento Card */}
+      <div className="w-full max-w-[220px] bg-white rounded-2xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] p-6 text-center">
+        
+        {/* Tactile Icon Box */}
+        <div className="w-10 h-10 bg-[#D98324] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center mx-auto mb-4">
+          <Loader2 className="w-5 h-5 text-[#131010] animate-spin" strokeWidth={3} />
+        </div>
+
+        {/* Very Simple Text */}
+        <p className="font-poppins font-black text-[#131010] text-sm uppercase tracking-tight">
+          Loading...
+        </p>
+
+        {/* Simple Sub-text */}
+        <div className="mt-2 flex items-center justify-center gap-1.5">
+          <span className="text-[10px] font-bold font-courier text-[#131010]/30 uppercase tracking-widest">
+            Almost there
+          </span>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-[#FFDDAB] py-6 sm:py-8 px-4 sm:px-6 lg:px-8">

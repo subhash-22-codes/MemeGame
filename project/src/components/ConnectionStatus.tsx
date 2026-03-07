@@ -12,48 +12,55 @@ const ConnectionStatus: React.FC = () => {
         return {
           icon: Wifi,
           text: 'Connected',
-          color: 'text-green-600',
-          bgColor: 'bg-green-100',
-          show: false // Don't show when connected
+          borderColor: 'border-[#5F8B4C]',
+          bgColor: 'bg-white',
+          textColor: 'text-[#5F8B4C]',
+          show: false 
         };
       case 'connecting':
         return {
           icon: RefreshCw,
-          text: 'Connecting...',
-          color: 'text-blue-600',
-          bgColor: 'bg-blue-100',
+          text: 'Connecting',
+          borderColor: 'border-[#131010]',
+          bgColor: 'bg-white',
+          textColor: 'text-[#131010]',
           show: true
         };
       case 'reconnecting':
         return {
           icon: RefreshCw,
-          text: `Reconnecting... (${reconnectionAttempts}/${maxReconnectionAttempts})`,
-          color: 'text-yellow-600',
-          bgColor: 'bg-yellow-100',
+          text: `Reconnecting`,
+          detail: `${reconnectionAttempts}/${maxReconnectionAttempts}`,
+          borderColor: 'border-[#131010]',
+          bgColor: 'bg-[#FFDDAB]',
+          textColor: 'text-[#131010]',
           show: true
         };
       case 'disconnected':
         return {
           icon: WifiOff,
           text: 'Disconnected',
-          color: 'text-red-600',
-          bgColor: 'bg-red-100',
+          borderColor: 'border-red-500',
+          bgColor: 'bg-white',
+          textColor: 'text-red-500',
           show: true
         };
       case 'error':
         return {
           icon: AlertTriangle,
-          text: 'Connection Error',
-          color: 'text-red-600',
-          bgColor: 'bg-red-100',
+          text: 'System Error',
+          borderColor: 'border-red-500',
+          bgColor: 'bg-white',
+          textColor: 'text-red-500',
           show: true
         };
       default:
         return {
           icon: WifiOff,
           text: 'Unknown',
-          color: 'text-gray-600',
-          bgColor: 'bg-gray-100',
+          borderColor: 'border-[#131010]/20',
+          bgColor: 'bg-gray-50',
+          textColor: 'text-gray-500',
           show: true
         };
     }
@@ -69,19 +76,33 @@ const ConnectionStatus: React.FC = () => {
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -50 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -50 }}
-        className="fixed top-4 right-4 z-50"
+        exit={{ opacity: 0, y: -20 }}
+        className="fixed top-4 right-4 z-[100]"
       >
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-lg border ${config.bgColor} ${config.color}`}>
+        <div className={`
+          flex items-center gap-2.5 px-3 py-2 rounded-xl border-2 shadow-[3px_3px_0px_0px_#131010]
+          ${config.bgColor} ${config.borderColor} ${config.textColor}
+        `}>
           <motion.div
             animate={connectionState === 'connecting' || connectionState === 'reconnecting' ? { rotate: 360 } : {}}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            className="shrink-0"
           >
-            <Icon className="w-4 h-4" />
+            <Icon className="w-3.5 h-3.5" strokeWidth={3} />
           </motion.div>
-          <span className="text-sm font-medium">{config.text}</span>
+          
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] sm:text-xs font-black font-poppins uppercase tracking-wider">
+              {config.text}
+            </span>
+            {config.detail && (
+              <span className="text-[9px] font-bold font-courier bg-[#131010]/10 px-1.5 py-0.5 rounded border border-[#131010]/10">
+                {config.detail}
+              </span>
+            )}
+          </div>
         </div>
       </motion.div>
     </AnimatePresence>

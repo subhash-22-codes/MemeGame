@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Check, Clock } from 'lucide-react';
+import { Check, Clock, Gavel, Users } from 'lucide-react';
 import { Player } from '../../context/GameContext';
 
 interface PlayerStatusProps {
@@ -26,13 +26,13 @@ const PlayerStatus: React.FC<PlayerStatusProps> = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'judge':
-        return <User className="w-4 h-4 text-[#D98324]" />;
+        return <Gavel className="w-4 h-4 text-[#131010]" strokeWidth={2.5} />;
       case 'submitted':
-        return <Check className="w-4 h-4 text-[#5F8B4C]" />;
+        return <Check className="w-4 h-4 text-[#131010]" strokeWidth={3} />;
       case 'thinking':
-        return <Clock className="w-4 h-4 text-orange-500 animate-pulse" />;
+        return <Clock className="w-4 h-4 text-[#D98324] animate-spin-slow" strokeWidth={2.5} />;
       default:
-        return <Clock className="w-4 h-4 text-gray-400" />;
+        return <Users className="w-4 h-4 text-[#131010]/40" strokeWidth={2.5} />;
     }
   };
 
@@ -41,9 +41,9 @@ const PlayerStatus: React.FC<PlayerStatusProps> = ({
       case 'judge':
         return 'Judge';
       case 'submitted':
-        return 'Submitted';
+        return 'Ready';
       case 'thinking':
-        return 'Thinking...';
+        return 'Thinking';
       default:
         return 'Waiting';
     }
@@ -52,47 +52,62 @@ const PlayerStatus: React.FC<PlayerStatusProps> = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'judge':
-        return 'border-[#D98324] bg-[#D98324]/10';
+        return 'border-[#131010] bg-[#D98324]';
       case 'submitted':
-        return 'border-[#5F8B4C] bg-[#5F8B4C]/10';
+        return 'border-[#131010] bg-[#5F8B4C]';
       case 'thinking':
-        return 'border-orange-500 bg-orange-500/10';
+        return 'border-[#131010] bg-white';
       default:
-        return 'border-gray-300 bg-gray-50';
+        return 'border-[#131010]/20 bg-[#131010]/5';
     }
   };
 
+  const getTextColor = (status: string) => {
+    if (status === 'thinking') return 'text-[#131010]';
+    if (status === 'waiting') return 'text-[#131010]/60';
+    return 'text-[#131010]'; // Judge & Submitted use solid black text on their colored backgrounds
+  };
+
   return (
-    <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/20">
-      <h3 className="font-bold text-lg text-[#131010] mb-3 font-['Poppins']">Players</h3>
-      
-      <div className="space-y-2">
-        {players.map((player) => {
+    <div className="w-full">
+      <div className="space-y-3">
+        {players.map((player, index) => {
           const status = getPlayerStatus(player);
           return (
             <div
               key={player.id}
-              className={`flex items-center justify-between p-3 rounded-lg border-2 transition-all duration-300 ${getStatusColor(status)}`}
+              className={`flex items-center justify-between p-3 rounded-xl border-2 shadow-[2px_2px_0px_0px_#131010] transition-all duration-300 ${getStatusColor(status)}`}
+              style={{ animationDelay: `${index * 50}ms` }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#5F8B4C] to-[#D98324] flex items-center justify-center">
-                  <span className="text-white font-mono text-sm font-bold">
-                    {player.username.charAt(0).toUpperCase()}
-                  </span>
+                {/* Avatar Box */}
+                <div className={`w-10 h-10 rounded-lg border-2 border-[#131010] flex items-center justify-center bg-white overflow-hidden shrink-0`}>
+                  {player.avatar ? (
+                     <img src={player.avatar} alt={player.username} className="w-full h-full object-cover" />
+                  ) : (
+                     <span className="text-[#131010] font-black text-lg font-poppins">
+                      {player.username.charAt(0).toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <div className="font-mono font-semibold text-[#131010]">
+                
+                {/* Player Info */}
+                <div className="flex flex-col">
+                  <div className={`font-black text-sm font-poppins truncate max-w-[100px] sm:max-w-[120px] ${getTextColor(status)}`}>
                     {player.username}
                   </div>
-                  <div className="text-sm text-[#131010]/70">
-                    Score: {player.score}
+                  <div className={`text-[10px] font-bold font-courier uppercase tracking-widest ${status === 'waiting' ? 'text-[#131010]/40' : 'text-[#131010]/70'}`}>
+                    {player.score} pts
                   </div>
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
-                {getStatusIcon(status)}
-                <span className="text-sm font-mono text-[#131010]/80">
+              {/* Status Badge */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <div className={`flex items-center justify-center w-6 h-6 rounded bg-white border-2 border-[#131010] shadow-[1px_1px_0px_0px_#131010]`}>
+                  {getStatusIcon(status)}
+                </div>
+                <span className={`text-[9px] font-bold font-courier uppercase tracking-widest ${getTextColor(status)}`}>
                   {getStatusText(status)}
                 </span>
               </div>
@@ -100,6 +115,16 @@ const PlayerStatus: React.FC<PlayerStatusProps> = ({
           );
         })}
       </div>
+
+      <style>{`
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 3s linear infinite;
+        }
+      `}</style>
     </div>
   );
 };

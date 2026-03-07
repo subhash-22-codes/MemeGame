@@ -11,6 +11,7 @@ import GameProvider from './context/GameContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import HowToPlay from './pages/HowToPlay';
 import Game from './pages/Game';
+import NotFound from './components/NotFound';
 // 👈 Import the navigation listener
 import './App.css';
 import { Toaster } from 'react-hot-toast';
@@ -20,30 +21,38 @@ function App() {
     <AuthProvider>
       <GameProvider>
         <Router>
-          {/* 👈 Mounted here so it's active across the app */}
           <Toaster
             position="top-right"
             toastOptions={{
               style: {
+                // THE BENTO SOUL
                 background: 'white',
                 color: '#131010',
-                fontFamily: 'Courier, monospace',
+                border: '2px solid #131010',
+                boxShadow: '4px 4px 0px 0px #131010',
+                
+                // THE WISE SCALE
                 borderRadius: '12px',
-                padding: '12px 16px',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
+                padding: '10px 16px', // 10% tighter padding
+                fontSize: '13px',
+                fontWeight: '700',
+                fontFamily: 'Poppins, sans-serif', // Poppins for fast reading
+                maxWidth: '280px',
               },
               success: {
                 iconTheme: {
-                  primary: '#5F8B4C',
-                  secondary: '#FFDDAB',
+                  primary: '#5F8B4C', // Our Green
+                  secondary: 'white',
                 },
               },
               error: {
                 iconTheme: {
-                  primary: '#D98324',
-                  secondary: '#FFDDAB',
+                  primary: '#D98324', // Our Orange
+                  secondary: 'white',
                 },
               },
+              // Adding a small duration so it's not annoying
+              duration: 3000,
             }}
           />
 
@@ -85,7 +94,7 @@ function App() {
               />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/HowToPlay" element={<HowToPlay />} />
-              <Route path="*" element={<div className="text-center mt-20 text-xl">404: Page Not Found</div>} />
+              <Route path="*" element={<NotFound />} />
 
             </Routes>
           </div>

@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Player } from '../context/GameContext';
 
 // Icons
-import { Users, MessageSquare, Volume2, VolumeX, Menu, X, ChevronDown, Trophy, Star } from 'lucide-react';
+import { Users, MessageSquare, Volume2, VolumeX, Menu, X, Trophy, Star, LogOut, Gavel } from 'lucide-react';
 
 // --- Component Imports ---
 import JudgeCelebration from '../components/GamePhases/JudgeCelebration';
@@ -18,6 +18,7 @@ import Timer from '../components/UI/Timer';
 import PlayerStatus from '../components/UI/PlayerStatus';
 
 const Game: React.FC = () => {
+  // --- WIRING INTACT ---
   const {
     gameState,
     isHost,
@@ -34,7 +35,6 @@ const Game: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // --- Local UI State ---
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showJudgeCelebration, setShowJudgeCelebration] = useState(false);
@@ -66,7 +66,6 @@ const Game: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [gameState]);
 
-  // Trigger Judge Celebration only for the Host when the game starts
   useEffect(() => {
     if (!gameState || !user) return;
     const currentJudgeId = gameState.currentJudge?.id;
@@ -124,9 +123,9 @@ const Game: React.FC = () => {
   const handleMemeScore = (playerId: string, score: number) => { if (isJudge) scoreMeme(playerId, score); };
   const handleRequestNextRound = () => { requestNextRound(); };
   const handleLeaveGame = () => {
-  leaveRoom();
-  navigate('/dashboard');
-};
+    leaveRoom();
+    navigate('/dashboard');
+  };
   const handleCelebrationComplete = () => { setShowJudgeCelebration(false); };
   
   const getPhaseTitle = () => {
@@ -153,13 +152,18 @@ const Game: React.FC = () => {
     }
     return '';
   };
+  // ---------------------
 
+  // --- Loading State (Tactile Bento) ---
   if (isRestoring || !gameState || !user) {
     return (
       <div className="min-h-screen bg-[#FFDDAB] flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl p-8 shadow-2xl text-center max-w-sm w-full">
-          <div className="w-16 h-16 border-4 border-t-[#5F8B4C] rounded-full animate-spin mx-auto mb-6"></div>
-          <h3 className="text-xl font-bold mb-2">{isRestoring ? 'Reconnecting...' : 'Loading Game...'}</h3>
+        <div className="bg-white rounded-2xl p-8 border-2 border-[#131010] shadow-[8px_8px_0px_0px_#131010] text-center max-w-sm w-full">
+          <div className="w-12 h-12 border-4 border-[#131010] border-t-[#5F8B4C] rounded-full animate-spin mx-auto mb-6"></div>
+          <h3 className="text-2xl font-black text-[#131010] font-poppins mb-2">
+            {isRestoring ? 'Reconnecting...' : 'Loading Game...'}
+          </h3>
+          <p className="text-[#131010]/60 font-medium font-poppins text-sm">Hold tight, setting up the board.</p>
         </div>
       </div>
     );
@@ -170,100 +174,146 @@ const Game: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFDDAB] via-[#FFDDAB]/90 to-[#FFDDAB]/80">
-      {/* --- HEADER SECTION --- */}
-      <div className="bg-white/95 backdrop-blur-md shadow-xl border-b border-white/30 sticky top-0 z-50">
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-[#5F8B4C] text-white px-3 py-1.5 rounded-lg font-mono font-bold text-sm">Room: {gameState.roomId}</div>
-              <div className="hidden sm:flex items-center gap-2 text-slate-500">
-                <Users className="w-4 h-4" />
-                <span className="font-mono text-sm">{gameState.players.length} players</span>
+    <div className="min-h-screen bg-[#FFDDAB] flex flex-col font-poppins selection:bg-[#D98324] selection:text-white overflow-x-hidden">
+      
+      {/* --- HEADER COMMAND BAR --- */}
+      <div className="bg-white border-b-2 border-[#131010] sticky top-0 z-50 shadow-sm">
+        <div className="px-4 py-3 sm:px-6">
+          <div className="flex items-center justify-between gap-4">
+            
+            {/* Left: Info */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="bg-[#131010] text-white px-2.5 py-1 rounded-md font-courier font-bold text-xs uppercase tracking-widest shrink-0">
+                  {gameState.roomId}
+                </div>
+                <div className="flex items-center gap-1.5 text-[#131010]/70 bg-[#131010]/5 px-2.5 py-1 rounded-md">
+                  <Users className="w-3.5 h-3.5" strokeWidth={2.5} />
+                  <span className="font-bold text-xs">{gameState.players.length}</span>
+                </div>
+              </div>
+              
+              {/* Desktop Phase Title */}
+              <div className="hidden sm:flex items-center gap-2">
+                <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse"></div>
+                <span className="text-[#131010] font-bold text-sm truncate">{getPhaseTitle()}</span>
+                {gameState.currentRound > 0 && (
+                  <div className="flex items-center gap-1 text-[#D98324] bg-[#FFDDAB] px-2 py-0.5 rounded-md border border-[#131010]/10">
+                    <Trophy className="w-3 h-3" strokeWidth={2.5} />
+                    <span className="font-black text-xs">{gameState.currentRound}/{gameState.totalRounds}</span>
+                  </div>
+                )}
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-2">
-                <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2.5 rounded-xl bg-white/60 hover:bg-white/80 transition-all shadow-sm">
-                  {soundEnabled ? <Volume2 className="w-5 h-5 text-slate-800" /> : <VolumeX className="w-5 h-5 text-slate-800" />}
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="hidden sm:flex items-center gap-2">
+                <button 
+                  onClick={() => setSoundEnabled(!soundEnabled)} 
+                  className="w-9 h-9 rounded-lg border-2 border-[#131010] flex items-center justify-center text-[#131010] hover:bg-[#FFDDAB] active:scale-95 transition-all"
+                >
+                  {soundEnabled ? <Volume2 className="w-4 h-4" strokeWidth={2.5} /> : <VolumeX className="w-4 h-4" strokeWidth={2.5} />}
                 </button>
-                <button onClick={() => setIsChatOpen(!isChatOpen)} className="p-2.5 rounded-xl bg-white/60 hover:bg-white/80 transition-all shadow-sm">
-                  <MessageSquare className="w-5 h-5 text-slate-800" />
+                <button 
+                  onClick={() => setIsChatOpen(!isChatOpen)} 
+                  className={`w-9 h-9 rounded-lg border-2 border-[#131010] flex items-center justify-center text-[#131010] hover:bg-[#FFDDAB] active:scale-95 transition-all ${isChatOpen ? 'bg-[#FFDDAB]' : 'bg-white'}`}
+                >
+                  <MessageSquare className="w-4 h-4" strokeWidth={2.5} />
                 </button>
-                <button onClick={handleLeaveGame} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-xl transition-all font-mono text-sm shadow-lg">
+                <button 
+                  onClick={handleLeaveGame} 
+                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all font-bold text-xs flex items-center gap-1.5"
+                >
+                  <LogOut className="w-3.5 h-3.5" strokeWidth={2.5} />
                   Leave
                 </button>
               </div>
 
-              <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden p-2.5 rounded-xl bg-white/60 shadow-sm">
-                {isMobileMenuOpen ? <X className="w-5 h-5 text-slate-800" /> : <Menu className="w-5 h-5 text-slate-800" />}
+              {/* Mobile Menu Toggle */}
+              <button 
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+                className="sm:hidden w-10 h-10 rounded-lg border-2 border-[#131010] bg-white flex items-center justify-center text-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all"
+              >
+                {isMobileMenuOpen ? <X className="w-5 h-5" strokeWidth={2.5} /> : <Menu className="w-5 h-5" strokeWidth={2.5} />}
               </button>
             </div>
           </div>
           
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse"></div>
-              <span className="text-slate-800 font-mono text-sm font-medium">{getPhaseTitle()}</span>
+          {/* Mobile Phase Title */}
+          <div className="sm:hidden flex items-center justify-between mt-2 pt-2 border-t border-[#131010]/10">
+             <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse"></div>
+                <span className="text-[#131010] font-bold text-xs truncate">{getPhaseTitle()}</span>
+              </div>
               {gameState.currentRound > 0 && (
-                <div className="flex items-center gap-1 text-slate-500">
-                  <Trophy className="w-3.5 h-3.5" />
-                  <span className="font-mono text-sm">{gameState.currentRound}/{gameState.totalRounds}</span>
+                <div className="flex items-center gap-1 text-[#D98324]">
+                  <Trophy className="w-3 h-3" strokeWidth={2.5} />
+                  <span className="font-black text-xs">{gameState.currentRound}/{gameState.totalRounds}</span>
                 </div>
               )}
-            </div>
           </div>
-
-          {getPhaseDescription() && (
-            <div className="mt-2 text-slate-500 font-mono text-[13px] italic">
-              {getPhaseDescription()}
-            </div>
-          )}
         </div>
       </div>
 
+      {/* Global Timer Bar */}
       {timerActive && (
-        <div className="px-4 py-4 bg-white/20 border-b border-white/20">
+        <div className="bg-[#131010] border-b-2 border-[#131010]">
           <Timer duration={timerDuration} onComplete={() => {}} isActive={timerActive} label="Selection Time" />
         </div>
       )}
 
       {/* --- MAIN CONTENT AREA --- */}
-      <div className="flex flex-col lg:flex-row min-h-0">
-        <div className="flex-1 p-4 lg:p-6">
-          <div className="max-w-4xl mx-auto">
+      <div className="flex flex-col lg:flex-row flex-1 relative min-h-0">
+        
+        {/* Game Board */}
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          <div className="max-w-4xl mx-auto space-y-6">
             
+            {/* Context/Helper Text */}
+            {getPhaseDescription() && (
+              <div className="text-center">
+                <span className="inline-block bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] px-4 py-1.5 rounded-full font-bold text-xs text-[#131010]">
+                  {getPhaseDescription()}
+                </span>
+              </div>
+            )}
+
             {/* JUDGE VIEW: Writing the Sentence */}
-            {gamePhase === 'sentenceCreation' && isJudge && <SentenceInput onSubmit={handleSentenceSubmit} />}
+            {gamePhase === 'sentenceCreation' && isJudge && (
+              <SentenceInput onSubmit={handleSentenceSubmit} />
+            )}
             
-            {/* ⭐️ PLAYER VIEW: Upgraded Judge Announcement Screen ⭐️ */}
+            {/* PLAYER VIEW: Waiting for Judge */}
             {gamePhase === 'sentenceCreation' && !isJudge && (
-              <div className="bg-white/95 rounded-3xl p-8 shadow-xl border border-white/30 text-center max-w-md mx-auto mt-10 transform transition-all hover:scale-105">
-                <h3 className="font-mono text-slate-400 text-sm uppercase tracking-widest mb-6">Current Judge</h3>
+              <div className="bg-white rounded-2xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010] text-center max-w-md mx-auto mt-4 sm:mt-10 transform transition-all hover:-translate-y-1">
+                <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFDDAB] px-3 py-1 rounded-md border-2 border-[#131010] font-black text-[10px] text-[#131010] uppercase tracking-widest mb-6">
+                  <Gavel className="w-3 h-3" strokeWidth={3} /> Current Judge
+                </div>
                 
-                <div className="relative w-28 h-28 mx-auto mb-6">
+                <div className="relative w-24 h-24 sm:w-32 sm:h-32 mx-auto mb-6">
                   <img 
                     src={gameState.currentJudge?.avatar || 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=judge'} 
                     alt="Judge" 
-                    className="w-full h-full rounded-full border-4 border-[#D98324] shadow-lg object-cover bg-[#FFDDAB]"
+                    className="w-full h-full rounded-2xl border-4 border-[#131010] shadow-[4px_4px_0px_0px_#131010] object-cover bg-[#FFDDAB]"
                   />
-                  <div className="absolute -bottom-2 -right-2 bg-[#D98324] p-2.5 rounded-full shadow-lg">
-                    <Star className="w-6 h-6 text-white" fill="currentColor" />
+                  <div className="absolute -bottom-3 -right-3 bg-[#D98324] p-2 rounded-xl border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010]">
+                    <Star className="w-5 h-5 text-[#131010]" strokeWidth={2.5} fill="currentColor" />
                   </div>
                 </div>
                 
-                <h2 className="text-3xl font-poppins font-black text-[#5F8B4C] mb-2">
+                <h2 className="text-2xl sm:text-3xl font-black text-[#131010] mb-2 truncate">
                   {gameState.currentJudge?.username}
                 </h2>
                 
-                <div className="flex items-center justify-center gap-3 text-slate-500 mt-8 bg-slate-50 py-4 px-6 rounded-2xl border border-slate-100">
-                  <div className="w-5 h-5 border-2 border-t-[#5F8B4C] border-slate-200 rounded-full animate-spin"></div>
-                  <p className="font-mono text-sm font-medium">Waiting for them to write a prompt...</p>
+                <div className="flex items-center justify-center gap-3 mt-8 bg-[#131010]/5 py-3 px-4 rounded-xl border-2 border-[#131010] border-dashed">
+                  <div className="w-4 h-4 border-2 border-t-[#5F8B4C] border-[#131010] rounded-full animate-spin"></div>
+                  <p className="font-bold text-xs sm:text-sm text-[#131010]">Cooking up a prompt...</p>
                 </div>
               </div>
             )}
 
+            {/* Game Phase Components */}
             {gamePhase === 'memeSelection' && !isJudge && gameState.currentSentence && (
               <MemeSelection
                 sentence={gameState.currentSentence}
@@ -312,33 +362,116 @@ const Game: React.FC = () => {
           </div>
         </div>
 
-        {/* --- SIDEBAR AREA --- */}
-        <div className="lg:w-80 lg:border-l lg:border-white/20 bg-white/10 backdrop-blur-sm">
-          <div className="lg:hidden">
-            <button
-              onClick={() => setIsPlayerStatusOpen(!isPlayerStatusOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white/20"
-            >
+        {/* --- SIDEBAR AREA (Player Status) --- */}
+        <div className={`
+          lg:w-80 lg:border-l-4 lg:border-[#131010] bg-white lg:bg-transparent
+          ${isPlayerStatusOpen ? 'block absolute inset-0 z-40 bg-[#FFDDAB] overflow-y-auto' : 'hidden lg:block'}
+        `}>
+          {/* Mobile Sidebar Close Header */}
+          {isPlayerStatusOpen && (
+            <div className="lg:hidden flex items-center justify-between p-4 border-b-2 border-[#131010] bg-white sticky top-0 z-10">
               <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-slate-800" />
-                <span className="font-mono text-sm font-medium text-slate-800">Players ({gameState.players.length})</span>
+                <Users className="w-5 h-5 text-[#131010]" strokeWidth={2.5} />
+                <span className="font-black text-[#131010]">The Squad ({gameState.players.length})</span>
               </div>
-              <ChevronDown 
-                className={`w-5 h-5 text-slate-800 transition-transform ${isPlayerStatusOpen ? 'rotate-180' : ''}`} 
+              <button 
+                onClick={() => setIsPlayerStatusOpen(false)}
+                className="w-8 h-8 rounded-lg border-2 border-[#131010] flex items-center justify-center bg-white shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
+              >
+                <X className="w-4 h-4 text-[#131010]" strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+          
+          <div className="p-4 lg:p-6 lg:sticky lg:top-0">
+            <div className="hidden lg:flex items-center gap-2 mb-4 px-2">
+              <Users className="w-5 h-5 text-[#131010]" strokeWidth={2.5} />
+              <h2 className="font-black text-lg text-[#131010]">The Squad</h2>
+            </div>
+            
+            <div className="bg-white rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] overflow-hidden">
+              <PlayerStatus
+                players={gameState.players}
+                currentJudge={gameState.currentJudge}
+                submissions={gameState.submissions}
+                showSubmissionStatus={gamePhase === 'memeSelection'}
               />
-            </button>
-          </div>
-
-          <div className={`${isPlayerStatusOpen ? 'block' : 'hidden'} lg:block p-4 lg:p-6`}>
-            <PlayerStatus
-              players={gameState.players}
-              currentJudge={gameState.currentJudge}
-              submissions={gameState.submissions}
-              showSubmissionStatus={gamePhase === 'memeSelection'}
-            />
+            </div>
           </div>
         </div>
+
       </div>
+
+      {/* --- MOBILE ACTION DRAWER --- */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-[#131010]/80 backdrop-blur-sm flex flex-col justify-end">
+          <div className="bg-white rounded-t-3xl border-t-4 border-[#131010] p-6 animate-fade-in-up">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-[#131010]">Game Menu</h3>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-2 bg-[#131010]/5 rounded-full"
+              >
+                <X className="w-5 h-5" strokeWidth={2.5} />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <button 
+                onClick={() => {
+                  setIsPlayerStatusOpen(true);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-4 bg-[#FFDDAB]/30 border-2 border-[#131010] rounded-xl font-bold text-[#131010]"
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-5 h-5" /> View Players
+                </div>
+                <span className="bg-[#131010] text-white px-2 py-0.5 rounded text-xs">{gameState.players.length}</span>
+              </button>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => {
+                    setSoundEnabled(!soundEnabled);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl font-bold text-sm"
+                >
+                  {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  Sound {soundEnabled ? 'On' : 'Off'}
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    setIsChatOpen(!isChatOpen);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl font-bold text-sm"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
+                </button>
+              </div>
+
+              <button 
+                onClick={handleLeaveGame}
+                className="w-full flex items-center justify-center gap-2 p-4 mt-2 bg-red-500 text-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl font-bold"
+              >
+                <LogOut className="w-5 h-5" /> Leave Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up { animation: fade-in-up 0.3s ease-out forwards; }
+      `}</style>
     </div>
   );
 };

@@ -85,8 +85,6 @@ const JoinRoom: React.FC = () => {
       
     } catch (error) {
       console.error('Failed to join room:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to join room. Check the code and try again.';
-      toast.error(`🚫 ${errorMessage}`);
       setIsJoining(false);
     }
   };

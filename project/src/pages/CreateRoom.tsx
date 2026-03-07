@@ -201,7 +201,7 @@ const CreateRoom: React.FC = () => {
                     onChange={(e) => handleInputChange('roomName', e.target.value)}
                     placeholder="e.g. Weekend Meme Session"
                     maxLength={30}
-                    className={`w-full px-4 py-3 bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold border rounded-lg transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] ${
+                    className={`w-full px-4 py-3 bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-semibold border rounded-lg transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] ${
                       errors.roomName ? 'border-red-500' : 'border-[#131010]'
                     }`}
                   />
@@ -229,7 +229,7 @@ const CreateRoom: React.FC = () => {
                     placeholder="Any custom rules? Let everyone know before they join."
                     maxLength={150}
                     rows={2}
-                    className={`w-full px-4 py-3 bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-medium border rounded-lg transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] resize-none ${
+                    className={`w-full px-4 py-3 bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-medium border rounded-lg transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] resize-none ${
                       errors.description ? 'border-red-500' : 'border-[#131010]'
                     }`}
                   />

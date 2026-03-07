@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Crown, Gamepad, Timer, Trophy, Zap, Users, MessageCircle, Star, RotateCcw, Github, Linkedin, Mail, Send, Gavel, Camera, Clock, Play, ArrowLeft, Twitter, CheckCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-
+import { API_URL } from '../config';
 const HowToPlay: React.FC = () => {
   // --- WIRING INTACT ---
   const [formData, setFormData] = useState({
@@ -48,7 +48,7 @@ const HowToPlay: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/contact', {
+      const response = await fetch(`${API_URL}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
