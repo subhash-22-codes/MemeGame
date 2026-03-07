@@ -1,13 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
 import ConnectionStatus from '../components/ConnectionStatus';
-import { ArrowLeft, Users, Play, Shield, Zap, Gamepad2 } from 'lucide-react';
-import {toast} from 'react-hot-toast';
+import { ArrowLeft, Users, Play, Info, Lock, Loader2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 const JoinRoom: React.FC = () => {
+  // --- WIRING INTACT ---
   const [roomCode, setRoomCode] = useState(['', '', '', '', '', '']);
   const [isJoining, setIsJoining] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -92,216 +92,196 @@ const JoinRoom: React.FC = () => {
   };
 
   const isComplete = roomCode.every(code => code !== '');
+  // ---------------------
+
+  // --- Auth Blocked State (Matched to Create Room) ---
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#FFDDAB] flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl border border-[#131010] shadow-[4px_4px_0px_0px_#131010] p-8 max-w-sm w-full text-center">
+          <div className="w-14 h-14 bg-[#FFDDAB] border border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center mx-auto mb-5">
+            <Lock className="w-6 h-6 text-[#131010]" strokeWidth={2.5} />
+          </div>
+          <h2 className="text-xl font-bold text-[#131010] font-poppins mb-2">Login Required</h2>
+          <p className="text-[#131010]/70 text-sm font-poppins mb-6">You need to be logged in to join a game.</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full bg-[#5F8B4C] text-white py-3 px-6 rounded-lg font-bold font-poppins transition-all duration-200 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFDDAB] via-[#FFE4B8] to-[#FFDDAB] relative overflow-hidden">
-      {/* Background Decorative Elements */}
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-10 sm:top-20 left-4 sm:left-10 w-16 sm:w-32 h-16 sm:h-32 bg-[#D98324] rounded-full blur-xl"></div>
-        <div className="absolute bottom-16 sm:bottom-32 right-8 sm:right-16 w-12 sm:w-24 h-12 sm:h-24 bg-[#5F8B4C] rounded-full blur-xl"></div>
-        <div className="absolute top-1/2 left-1/4 w-8 sm:w-16 h-8 sm:h-16 bg-[#D98324] rounded-full blur-lg"></div>
-      </div>
-
+    <div className="min-h-screen bg-[#FFDDAB] py-6 sm:py-10 px-4 sm:px-6 lg:px-8">
       <ConnectionStatus />
       
-      {/* Header */}
-      <div className="relative z-10 bg-white/90 backdrop-blur-sm border-b border-[#D98324]/20 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <motion.button
-            initial={{ x: -20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ duration: 0.4 }}
-            whileHover={{ x: -2 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/dashboard')}
-            className="inline-flex items-center gap-2 text-[#5F8B4C] hover:text-[#4A6B3A] font-poppins font-medium transition-colors duration-200 text-sm sm:text-base"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Dashboard</span>
-          </motion.button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="relative z-10 flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
-        <div className="w-full max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-            
-            {/* Left Side - Information */}
-            <motion.div
-              initial={{ x: -30, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="space-y-6 lg:space-y-8 order-2 lg:order-1"
+      <div className="max-w-5xl mx-auto">
+        
+        {/* Header Section (Consistently placed matching Create Room) */}
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-in">
+          <div>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex items-center text-[#131010]/60 hover:text-[#131010] transition-colors font-bold text-xs uppercase tracking-wider font-courier mb-3 sm:mb-4"
             >
-              <div>
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                  className="inline-flex items-center gap-2 sm:gap-3 bg-[#5F8B4C]/10 text-[#5F8B4C] px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-poppins font-medium mb-4 sm:mb-6 border border-[#5F8B4C]/20"
-                >
-                  <Shield className="w-3 sm:w-4 h-3 sm:h-4" />
-                  Secure Room Access
-                </motion.div>
-                
-                <h1 className="font-poppins text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-[#5F8B4C] mb-4 sm:mb-6 leading-tight">
-                  Join Game Room
-                </h1>
-                
-                <p className="font-courier text-base sm:text-lg lg:text-xl text-[#131010]/70 mb-6 sm:mb-8 leading-relaxed">
-                  Enter your 6-character room code to connect with other players and start your meme gaming session.
-                </p>
-              </div>
-
-              {/* Features */}
-              <div className="space-y-3 sm:space-y-4">
-                <div className="flex items-start gap-3 sm:gap-4">
-                  <div className="w-6 sm:w-8 h-6 sm:h-8 bg-[#D98324]/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 border border-[#D98324]/20">
-                    <Zap className="w-3 sm:w-4 h-3 sm:h-4 text-[#D98324]" />
-                  </div>
-                  <div>
-                    <h3 className="font-poppins font-semibold text-[#5F8B4C] mb-1 text-sm sm:text-base">Instant Connection</h3>
-                    <p className="font-courier text-[#131010]/60 text-xs sm:text-sm">Connect to any room instantly with a valid room code</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3 sm:gap-4">
-                  <div className="w-6 sm:w-8 h-6 sm:h-8 bg-[#5F8B4C]/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 border border-[#5F8B4C]/20">
-                    <Users className="w-3 sm:w-4 h-3 sm:h-4 text-[#5F8B4C]" />
-                  </div>
-                  <div>
-                    <h3 className="font-poppins font-semibold text-[#5F8B4C] mb-1 text-sm sm:text-base">Multiplayer Ready</h3>
-                    <p className="font-courier text-[#131010]/60 text-xs sm:text-sm">Join up to 8 players in real-time meme battles</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3 sm:gap-4">
-                  <div className="w-6 sm:w-8 h-6 sm:h-8 bg-[#D98324]/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 border border-[#D98324]/20">
-                    <Gamepad2 className="w-3 sm:w-4 h-3 sm:h-4 text-[#D98324]" />
-                  </div>
-                  <div>
-                    <h3 className="font-poppins font-semibold text-[#5F8B4C] mb-1 text-sm sm:text-base">Epic Meme Battles</h3>
-                    <p className="font-courier text-[#131010]/60 text-xs sm:text-sm">Compete in hilarious meme challenges and tournaments</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* User Info */}
-              <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 sm:p-6 border border-[#D98324]/20 shadow-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 sm:w-10 h-8 sm:h-10 bg-gradient-to-br from-[#D98324] to-[#C07620] rounded-full flex items-center justify-center">
-                    <span className="text-white font-poppins font-semibold text-xs sm:text-sm">
-                      {user?.username?.charAt(0).toUpperCase() || 'U'}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="font-courier text-xs sm:text-sm text-[#131010]/60">Playing as</p>
-                    <p className="font-poppins font-semibold text-[#5F8B4C] text-sm sm:text-base">{user?.username || 'Player'}</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Right Side - Join Form */}
-            <motion.div
-              initial={{ x: 30, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="w-full max-w-md mx-auto lg:mx-0 order-1 lg:order-2"
-            >
-              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 p-6 sm:p-8 lg:p-10">
-                
-                {/* Form Header */}
-                <div className="text-center mb-6 sm:mb-8">
-                  <div className="w-12 sm:w-16 h-12 sm:h-16 bg-gradient-to-br from-[#D98324] to-[#C07620] rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-lg">
-                    <Users className="w-6 sm:w-8 h-6 sm:h-8 text-white" />
-                  </div>
-                  <h2 className="font-poppins text-xl sm:text-2xl font-bold text-[#5F8B4C] mb-2">Enter Room Code</h2>
-                  <p className="font-courier text-sm sm:text-base text-[#131010]/70">Input the 6-character code provided by your host</p>
-                </div>
-
-                {/* Room Code Input */}
-                <form onSubmit={handleJoin} className="space-y-6 sm:space-y-8">
-                  <div>
-                    <label className="block font-poppins text-sm font-semibold text-[#5F8B4C] mb-3 sm:mb-4 text-center">
-                      Room Code
-                    </label>
-                    
-                    <div className="flex gap-1 sm:gap-2 lg:gap-3 justify-center mb-3 sm:mb-4">
-                      {roomCode.map((digit, index) => (
-                        <motion.input
-                          key={index}
-                          ref={(el) => (inputRefs.current[index] = el)}
-                          type="text"
-                          value={digit}
-                          onChange={(e) => handleInputChange(index, e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(index, e)}
-                          onFocus={() => setFocusedIndex(index)}
-                          onBlur={() => setFocusedIndex(null)}
-                          onPaste={handlePaste}
-                          className={`w-8 sm:w-10 lg:w-12 h-10 sm:h-12 lg:h-14 text-center text-base sm:text-lg lg:text-xl font-mono font-bold border-2 rounded-lg sm:rounded-xl transition-all duration-200 outline-none ${
-                            focusedIndex === index
-                              ? 'border-[#D98324] bg-[#FFF4E6] text-[#D98324]' // Soft focus
-                              : digit
-                              ? 'border-[#5F8B4C] bg-[#5F8B4C]/10 text-[#5F8B4C]'
-                              : 'border-gray-300 bg-white hover:border-[#D98324]/50 text-gray-700'
-                          }`}
-                          maxLength={1}
-                          autoComplete="off"
-                          autoCapitalize="characters"
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ duration: 0.3, delay: index * 0.05 }}
-                        />
-                      ))}
-                    </div>
-                    
-                    <p className="font-courier text-xs text-[#131010]/60 text-center">
-                      Paste your code or type each character individually
-                    </p>
-                  </div>
-
-                  {/* Join Button */}
-                  <motion.button
-                    whileHover={{ y: -1, scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="submit"
-                    disabled={!isComplete || isJoining}
-                    className={`w-full flex items-center justify-center gap-2 sm:gap-3 py-3 sm:py-4 px-4 sm:px-6 rounded-xl font-poppins font-semibold text-sm sm:text-base transition-all duration-200 shadow-lg ${
-                      !isComplete || isJoining
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-sm'
-                        : 'bg-gradient-to-r from-[#D98324] to-[#C07620] hover:from-[#C07620] hover:to-[#B06B1C] text-white shadow-xl hover:shadow-2xl'
-                    }`}
-                  >
-                    {isJoining ? (
-                      <>
-                        <div className="w-4 sm:w-5 h-4 sm:h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                        <span>Joining Room...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 sm:w-5 h-4 sm:h-5 fill-current" />
-                        <span>Join Room</span>
-                      </>
-                    )}
-                  </motion.button>
-                </form>
-
-                {/* Help Text */}
-                <div className="mt-6 sm:mt-8 p-3 sm:p-4 bg-gradient-to-br from-[#FFDDAB]/30 to-[#FFE4B8]/30 rounded-xl border border-[#D98324]/20">
-                  <h4 className="font-poppins font-semibold text-[#5F8B4C] text-xs sm:text-sm mb-2">Need help?</h4>
-                  <ul className="font-courier text-xs text-[#131010]/70 space-y-1">
-                    <li>• Room codes are exactly 6 characters long</li>
-                    <li>• Codes are case-insensitive (ABC123 = abc123)</li>
-                    <li>• Ask your host for the current room code</li>
-                  </ul>
-                </div>
-              </div>
-            </motion.div>
+              <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> Back to Dashboard
+            </button>
+            <h1 className="text-3xl sm:text-4xl font-black text-[#131010] font-poppins tracking-tight leading-none">
+              Join a Game
+            </h1>
           </div>
         </div>
+
+        {/* The Layout Grid (F-Pattern matching Create Room) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-fade-in-up">
+          
+          {/* LEFT COLUMN: The Action (Takes up 8 columns on desktop) */}
+          <div className="lg:col-span-8 flex flex-col gap-5">
+            
+            {/* Bento Box 1: Code Input */}
+            <div className="bg-white rounded-xl p-5 sm:p-8 border border-[#131010] shadow-[3px_3px_0px_0px_#131010]">
+              <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                <div className="w-12 h-12 bg-[#FFDDAB] border border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center">
+                  <Users className="w-6 h-6 text-[#D98324]" strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h2 className="font-poppins font-bold text-xl text-[#131010]">Room Code</h2>
+                  <p className="font-poppins font-medium text-xs sm:text-sm text-[#131010]/60">Grab the 6-letter code from your host.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleJoin} className="space-y-8">
+                <div className="flex flex-col items-center">
+                  {/* The 6 Input Boxes (Keycap Style) */}
+                  <div className="flex gap-2 sm:gap-3 justify-center w-full max-w-md">
+                    {roomCode.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => (inputRefs.current[index] = el)}
+                        type="text"
+                        value={digit}
+                        onChange={(e) => handleInputChange(index, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(index, e)}
+                        onFocus={() => setFocusedIndex(index)}
+                        onBlur={() => setFocusedIndex(null)}
+                        onPaste={handlePaste}
+                        maxLength={1}
+                        autoComplete="off"
+                        autoCapitalize="characters"
+                        className={`w-10 sm:w-12 md:w-14 h-12 sm:h-14 md:h-16 text-center text-xl sm:text-2xl font-poppins font-black border-2 rounded-lg transition-all outline-none uppercase ${
+                          focusedIndex === index
+                            ? 'border-[#D98324] bg-[#FFDDAB]/20 text-[#131010] shadow-[2px_2px_0px_0px_#D98324] -translate-y-[1px]'
+                            : digit
+                            ? 'border-[#131010] bg-white text-[#131010] shadow-[2px_2px_0px_0px_#131010]'
+                            : 'border-[#131010]/20 bg-[#131010]/5 text-[#131010]'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="font-poppins font-medium text-xs text-[#131010]/40 mt-4 text-center">
+                    Tip: You can just paste the code if you copied it.
+                  </p>
+                </div>
+
+                {/* Join Button */}
+                <button
+                  type="submit"
+                  disabled={!isComplete || isJoining}
+                  className="w-full sm:w-auto sm:min-w-[200px] mx-auto flex items-center justify-center gap-2 py-3.5 px-8 rounded-lg font-poppins font-bold text-sm transition-all border disabled:opacity-50 disabled:bg-[#131010]/20 disabled:text-[#131010]/40 disabled:border-[#131010]/20 disabled:shadow-none bg-[#5F8B4C] border-[#131010] text-white shadow-[3px_3px_0px_0px_#131010] hover:shadow-[4px_4px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
+                >
+                  {isJoining ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" strokeWidth={3} />
+                      <span>Joining...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play size={16} strokeWidth={3} />
+                      <span>Join Game</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: The Guide (Takes up 4 columns on desktop, stacks on mobile) */}
+          <div className="lg:col-span-4 flex flex-col gap-5">
+            <div className="bg-white rounded-xl p-5 sm:p-6 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] sticky top-6">
+              <div className="flex items-center gap-2 mb-6">
+                <Info size={18} className="text-[#D98324]" strokeWidth={2.5} />
+                <h2 className="font-poppins font-bold text-lg text-[#131010]">How to Play</h2>
+              </div>
+
+              {/* Simple, Human Steps */}
+              <div className="space-y-5 mb-6">
+                {[
+                  {
+                    step: '1',
+                    title: "Get the Code",
+                    desc: "Ask the person hosting the game for the 6-letter room code."
+                  },
+                  {
+                    step: '2',
+                    title: "Enter the Lobby",
+                    desc: "Type it in and hit join. You'll drop right into the waiting room."
+                  },
+                  {
+                    step: '3',
+                    title: "Wait for the Host",
+                    desc: "Hang tight! The host will start the game once everyone is in."
+                  }
+                ].map((item, i) => (
+                  <div key={i} className="flex gap-4 items-start">
+                    <div className="w-8 h-8 rounded-lg bg-[#FFDDAB] border border-[#131010] shadow-[1px_1px_0px_0px_#131010] flex items-center justify-center font-black font-poppins text-[#131010] text-sm shrink-0">
+                      {item.step}
+                    </div>
+                    <div>
+                      <h3 className="font-poppins font-bold text-sm text-[#131010] mb-0.5">{item.title}</h3>
+                      <p className="font-poppins font-medium text-xs text-[#131010]/60 leading-relaxed">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Player Tag (Friendly Reminder) */}
+              <div className="pt-5 border-t border-[#131010]/10 flex items-center justify-center">
+                <div className="inline-flex items-center gap-2 bg-[#FFDDAB]/20 px-4 py-2 rounded-lg border border-[#131010] shadow-[1px_1px_0px_0px_#131010]">
+                  <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse" />
+                  <p className="font-courier text-xs font-bold text-[#131010]/70 uppercase tracking-widest">
+                    Playing as <span className="text-[#5F8B4C]">{user?.username || 'Player'}</span>
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
       </div>
+      
+      {/* Custom Animations to Match CreateRoom */}
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+        .animate-fade-in-up {
+          animation: fade-in-up 0.4s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 };

@@ -21,6 +21,7 @@ interface Toast {
 }
 
 const ForgetPasswordPage: React.FC = () => {
+  // --- WIRING INTACT ---
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -34,7 +35,6 @@ const ForgetPasswordPage: React.FC = () => {
   const [otpTimer, setOtpTimer] = useState(0);
   const navigate = useNavigate();
 
-  // Toast functionality
   const addToast = (type: 'success' | 'error' | 'info', message: string) => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, type, message }]);
@@ -43,7 +43,6 @@ const ForgetPasswordPage: React.FC = () => {
     }, 5000);
   };
 
-  // OTP Timer
   useEffect(() => {
     if (otpTimer > 0) {
       const timer = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
@@ -51,7 +50,6 @@ const ForgetPasswordPage: React.FC = () => {
     }
   }, [otpTimer]);
 
-  // Validation functions
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
@@ -72,7 +70,6 @@ const ForgetPasswordPage: React.FC = () => {
     return /^\d{6}$/.test(otp);
   };
 
-  // Clear errors when inputs change
   useEffect(() => {
     setErrors({});
   }, [email, otp, newPassword, confirmPassword]);
@@ -111,7 +108,7 @@ const ForgetPasswordPage: React.FC = () => {
 
       addToast('success', `OTP sent to ${email}. Check your inbox or Spam!`);
       setStep(2);
-      setOtpTimer(300); // 5 minutes
+      setOtpTimer(300);
     } catch (err) {
       console.error(err);
       addToast('error', 'Something went wrong. Please try again.');
@@ -211,438 +208,320 @@ const ForgetPasswordPage: React.FC = () => {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+  // ---------------------
 
   return (
-    <div className="min-h-screen bg-[#FFDDAB] flex flex-col lg:flex-row">
-      {/* Toast Container */}
-       <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 pointer-events-none">
-    <AnimatePresence initial={false}>
-      {toasts.map((toast) => (
-        <motion.div
-          key={toast.id}
-          layout
-          initial={{ opacity: 0, x: 40, scale: 0.98 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 40, scale: 0.98 }}
-          transition={{
-            layout: { duration: 0.3, ease: 'easeInOut' },
-            default: { duration: 0.3, ease: 'easeInOut' },
-          }}
-          className={`flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg pointer-events-auto ${
-            toast.type === 'success'
-              ? 'bg-[#5F8B4C] text-white'
-              : toast.type === 'error'
-              ? 'bg-red-500 text-white'
-              : 'bg-[#D98324] text-white'
-          }`}
-        >
-          {toast.type === 'success' && <CheckCircle className="w-5 h-5" />}
-          {toast.type === 'error' && <AlertCircle className="w-5 h-5" />}
-          {toast.type === 'info' && <Shield className="w-5 h-5" />}
-          <span className="font-courier text-sm font-medium">{toast.message}</span>
-        </motion.div>
-      ))}
-    </AnimatePresence>
-  </div>
+    <div className="min-h-screen bg-[#FFDDAB] flex flex-col lg:flex-row font-poppins selection:bg-[#D98324] selection:text-white">
+      
+      {/* Toast Container (Aesthetic match) */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence initial={false}>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              layout
+              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 40, scale: 0.98 }}
+              transition={{ layout: { duration: 0.3, ease: 'easeInOut' }, default: { duration: 0.3, ease: 'easeInOut' } }}
+              className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] pointer-events-auto ${
+                toast.type === 'success' ? 'bg-[#5F8B4C] text-white' : 
+                toast.type === 'error' ? 'bg-red-500 text-white' : 
+                'bg-[#D98324] text-[#131010]'
+              }`}
+            >
+              {toast.type === 'success' && <CheckCircle className="w-5 h-5 shrink-0" strokeWidth={2.5} />}
+              {toast.type === 'error' && <AlertCircle className="w-5 h-5 shrink-0" strokeWidth={2.5} />}
+              {toast.type === 'info' && <Shield className="w-5 h-5 shrink-0" strokeWidth={2.5} />}
+              <span className="font-poppins text-sm font-bold">{toast.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-      {/* Left Side - Illustration */}
+      {/* Left Side - Illustration (Bento Style) */}
       <motion.div 
         initial={{ opacity: 0, x: -40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6 }}
-        className="lg:w-1/2 bg-gradient-to-br from-[#5F8B4C] to-[#4A7039] flex items-center justify-center p-8 lg:p-12"
+        className="lg:w-1/2 bg-[#5F8B4C] border-b-4 lg:border-b-0 lg:border-r-4 border-[#131010] flex items-center justify-center p-8 lg:p-12 relative overflow-hidden"
       >
-        <div className="text-center text-white max-w-md">
+        <div className="absolute inset-0 opacity-[0.05] bg-[linear-gradient(#131010_1px,transparent_1px),linear-gradient(90deg,#131010_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+        
+        <div className="text-center text-white max-w-md relative z-10">
           <motion.div 
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
+            initial={{ scale: 0.8, opacity: 0, rotate: -5 }}
+            animate={{ scale: 1, opacity: 1, rotate: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
             className="mb-8"
           >
-             <img 
+            <div className="bg-white p-4 rounded-3xl border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010] inline-block transform rotate-3 hover:rotate-6 transition-transform">
+              <img 
                 src='/forget.png' 
                 alt="Security Illustration" 
-                className="w-64 h-64 mx-auto object-cover rounded-full shadow-2xl ring-8 ring-white/20"
+                className="w-48 h-48 lg:w-64 lg:h-64 object-cover rounded-xl border-2 border-[#131010]"
               />
+            </div>
           </motion.div>
+
           <motion.h1 
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.3 }}
-            className="font-poppins text-3xl lg:text-4xl font-bold mb-4"
+            className="font-poppins text-3xl lg:text-5xl font-black mb-4 tracking-tight drop-shadow-[2px_2px_0px_#131010]"
           >
-            Secure Password Recovery
+            Secure Recovery
           </motion.h1>
           <motion.p 
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="font-courier text-[#FFDDAB] text-lg leading-relaxed"
+            className="font-medium text-[#FFDDAB] text-lg leading-relaxed"
           >
-            Your security is our priority. Follow our simple steps to safely reset your password and regain access to your account.
+            Locked out? No stress. Follow the steps to safely reset your password and get back into the lobby.
           </motion.p>
-          <motion.div 
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-            className="flex justify-center mt-8 space-x-4"
-          >
-            <div className="w-3 h-3 bg-white rounded-full opacity-60"></div>
-            <div className="w-3 h-3 bg-white rounded-full opacity-40"></div>
-            <div className="w-3 h-3 bg-white rounded-full opacity-40"></div>
-          </motion.div>
         </div>
       </motion.div>
 
-      {/* Right Side - Form */}
+      {/* Right Side - Form (Tactile Bento) */}
       <motion.div 
-        initial={{ opacity: 0, x: 50 }}
+        initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6 }}
-        className="lg:w-1/2 flex items-center justify-center p-8 lg:p-12"
+        className="lg:w-1/2 flex flex-col justify-center p-6 sm:p-8 lg:p-16"
       >
-        <div className="w-full max-w-md">
-          {/* Progress Indicator */}
-          <motion.div 
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.5 }}
-            className="mb-8"
+        <div className="w-full max-w-md mx-auto">
+          
+          <button
+            onClick={() => navigate('/')}
+            className="inline-flex items-center text-[#131010]/60 hover:text-[#131010] transition-colors font-bold text-xs uppercase tracking-wider font-courier mb-8"
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300 ${
-                step >= 1 ? 'bg-[#5F8B4C] text-white shadow-lg' : 'bg-white text-[#131010] border-2 border-gray-200'
-              }`}>
-                <Mail className="w-6 h-6" />
-              </div>
-              <div className={`flex-1 h-2 mx-4 rounded-full transition-all duration-500 ${
-                step >= 2 ? 'bg-[#5F8B4C]' : 'bg-gray-200'
-              }`}></div>
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300 ${
-                step >= 2 ? 'bg-[#5F8B4C] text-white shadow-lg' : 'bg-white text-[#131010] border-2 border-gray-200'
-              }`}>
-                <KeyRound className="w-6 h-6" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between font-courier text-sm text-[#131010]">
-              <span>Email Verification</span>
-              <span>Reset Password</span>
-            </div>
-          </motion.div>
+            <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> Back to Login
+          </button>
 
-          {/* Step 1: Email Input */}
-          {step === 1 && (
+          <div className="bg-white rounded-3xl p-8 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]">
+            
+            {/* Progress Indicator */}
             <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-6"
+              initial={{ y: -10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="mb-8"
             >
-              <div className="text-center mb-8">
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                >
-                  <Shield className="w-16 h-16 text-[#D98324] mx-auto mb-4" />
-                </motion.div>
-                <h2 className="font-poppins text-[#5F8B4C] text-2xl lg:text-3xl font-bold mb-2">
-                  Forgot Password?
-                </h2>
-                <p className="font-courier text-[#131010] opacity-70">
-                  Don't worry! Enter your email address and we'll send you a verification code.
-                </p>
+              <div className="flex items-center justify-between mb-4">
+                <div className={`flex items-center justify-center w-12 h-12 rounded-xl border-2 transition-all duration-300 font-black ${
+                  step >= 1 
+                    ? 'bg-[#D98324] text-[#131010] border-[#131010] shadow-[2px_2px_0px_0px_#131010]' 
+                    : 'bg-white text-[#131010]/30 border-[#131010]/20'
+                }`}>
+                  1
+                </div>
+                <div className={`flex-1 h-2 mx-2 rounded-full transition-all duration-500 border ${
+                  step >= 2 ? 'bg-[#131010] border-[#131010]' : 'bg-[#131010]/10 border-transparent'
+                }`}></div>
+                <div className={`flex items-center justify-center w-12 h-12 rounded-xl border-2 transition-all duration-300 font-black ${
+                  step >= 2 
+                    ? 'bg-[#5F8B4C] text-white border-[#131010] shadow-[2px_2px_0px_0px_#131010]' 
+                    : 'bg-white text-[#131010]/30 border-[#131010]/20'
+                }`}>
+                  2
+                </div>
               </div>
+              <div className="flex items-center justify-between font-poppins font-bold text-xs text-[#131010]/60 uppercase tracking-widest">
+                <span>Verify</span>
+                <span>Reset</span>
+              </div>
+            </motion.div>
 
-              <div className="space-y-4">
+            {/* Step 1: Email Input */}
+            {step === 1 && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div>
-                  <label htmlFor="email" className="block font-poppins text-sm font-medium text-[#5F8B4C] mb-2">
+                  <h2 className="font-black text-[#131010] text-2xl lg:text-3xl mb-2">Find Account</h2>
+                  <p className="font-medium text-sm text-[#131010]/60">
+                    Enter the email associated with your profile.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="email" className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
                     Email Address
                   </label>
-                  <div className="relative group">
-                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#5F8B4C] w-5 h-5 transition-all group-focus-within:text-[#D98324]" />
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-4 z-10 pointer-events-none">
+                      <Mail size={20} className="text-[#131010]" strokeWidth={2.5} />
+                    </div>
                     <input
                       id="email"
                       type="email"
-                      placeholder="Enter your email address"
+                      placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className={`w-full pl-12 pr-4 py-4 border-2 rounded-xl font-courier text-[#131010] focus:ring-2 focus:ring-[#D98324] focus:border-[#D98324] focus:outline-none transition-all duration-200 ${
-                        errors.email ? 'border-red-500 bg-red-50 placeholder-red-400' : 'border-[#5F8B4C] bg-white placeholder-gray-400'
-                      }`}
                       disabled={loading}
+                      className={`
+                        w-full px-4 py-3.5 pl-12 
+                        bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold
+                        border-2 rounded-xl transition-shadow duration-200
+                        focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
+                        placeholder:text-[#131010]/30 placeholder:font-medium
+                        ${errors.email ? 'border-red-500 bg-red-50/50' : 'border-[#131010]'}
+                      `}
                     />
                   </div>
                   {errors.email && (
-                    <motion.p 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 font-courier text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.email}
+                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-1 font-bold text-xs text-red-600 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" strokeWidth={2.5} /> {errors.email}
                     </motion.p>
                   )}
                 </div>
 
-                <motion.button
-                  whileHover={{ y: -2 }}
-                  whileTap={{ y: 0 }}
+                <button
                   onClick={sendOtp}
                   disabled={loading}
-                  className="w-full bg-[#5F8B4C] hover:bg-[#4A7039] disabled:opacity-50 disabled:cursor-not-allowed text-white font-poppins font-semibold py-4 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                  className="w-full flex items-center justify-center gap-2 bg-[#D98324] text-[#131010] border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] hover:shadow-[5px_5px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none disabled:opacity-50 disabled:shadow-none disabled:translate-y-[2px] font-bold py-3.5 px-4 rounded-xl transition-all"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Sending OTP...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="w-5 h-5" />
-                      Send Verification Code
-                    </>
-                  )}
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Shield size={18} strokeWidth={2.5} /> Send OTP Code</>}
+                </button>
+              </motion.div>
+            )}
 
-          {/* Step 2: OTP and Password Reset */}
-          {step === 2 && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-6"
-            >
-              <div className="text-center mb-8">
-                <motion.button
-                  whileHover={{ x: -2 }}
-                  onClick={() => setStep(1)}
-                  className="inline-flex items-center gap-2 text-[#5F8B4C] hover:text-[#4A7039] mb-4 transition-colors font-courier"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to email
-                </motion.button>
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                >
-                  <Lock className="w-16 h-16 text-[#D98324] mx-auto mb-4" />
-                </motion.div>
-                <h2 className="font-poppins text-[#5F8B4C] text-2xl lg:text-3xl font-bold mb-2">
-                  Reset Your Password
-                </h2>
-                <p className="font-courier text-[#131010] opacity-70">
-                  Enter the verification code sent to <span className="font-poppins font-semibold text-[#D98324]">{email}</span>
-                </p>
-              </div>
-
-              <div className="space-y-4">
+            {/* Step 2: OTP and Password Reset */}
+            {step === 2 && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div>
-                  <label htmlFor="otp" className="block font-poppins text-sm font-medium text-[#5F8B4C] mb-2">
-                    Verification Code
-                  </label>
-                  <div className="relative group">
-                    <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-[#5F8B4C] transition-all group-focus-within:text-[#D98324]" />
-                    
-                    <input
-                      id="otp"
-                      type="text"
-                      placeholder="Enter 6-digit code"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className={`
-                        w-full pl-12 pr-4 py-4 
-                        rounded-xl border-2
-                        transition-all duration-300 ease-in-out
-                        text-center text-lg font-monaco tracking-[0.5em]
-                        focus:ring-2 focus:outline-none focus:ring-[#D98324] focus:border-[#D98324]
-                        placeholder:text-gray-400
-                        ${errors.otp 
-                          ? 'border-red-400 bg-red-50 text-red-700' 
-                          : 'border-[#5F8B4C] bg-white text-[#131010]'
-                        }
-                        disabled:opacity-50 disabled:cursor-not-allowed
-                      `}
-                      maxLength={6}
-                      disabled={loading}
-                    />
-                  </div>
+                  <h2 className="font-black text-[#131010] text-2xl lg:text-3xl mb-2">Secure Reset</h2>
+                  <p className="font-medium text-sm text-[#131010]/60">
+                    Code sent to <span className="font-bold text-[#D98324]">{email}</span>
+                  </p>
+                </div>
 
-                  {errors.otp && (
-                    <motion.p 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 font-courier text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.otp}
-                    </motion.p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between font-courier text-sm">
-                    <span className="text-[#131010] opacity-70">
-                      {otpTimer > 0 ? `Resend in ${formatTime(otpTimer)}` : 'Code expired'}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-end">
+                    <label htmlFor="otp" className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
+                      Verification Code
+                    </label>
+                    <span className="text-xs font-bold font-courier text-[#D98324]">
+                      {otpTimer > 0 ? formatTime(otpTimer) : 'Expired'}
                     </span>
+                  </div>
+                  <input
+                    id="otp"
+                    type="text"
+                    placeholder="------"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    maxLength={6}
+                    disabled={loading}
+                    className={`
+                      w-full py-4 border-2 rounded-xl text-center text-2xl font-black font-courier tracking-[0.5em] transition-shadow duration-200
+                      focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
+                      ${errors.otp ? 'border-red-500 bg-red-50/50' : 'border-[#131010] bg-[#FFDDAB]/10 text-[#131010]'}
+                    `}
+                  />
+                  {errors.otp && (
+                    <p className="mt-1 font-bold text-xs text-red-600 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" strokeWidth={2.5} /> {errors.otp}
+                    </p>
+                  )}
+                  <div className="text-right">
                     <button
                       onClick={resendOtp}
                       disabled={otpTimer > 0 || loading}
-                      className="text-[#5F8B4C] hover:text-[#4A7039] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="text-xs font-bold text-[#5F8B4C] hover:text-[#131010] disabled:text-[#131010]/30 transition-colors uppercase tracking-wider font-courier"
                     >
                       Resend Code
                     </button>
                   </div>
                 </div>
 
-                <div>
-                  <label htmlFor="newPassword" className="block font-poppins text-sm font-medium text-[#5F8B4C] mb-2">
+                <div className="space-y-1.5">
+                  <label htmlFor="newPassword" className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
                     New Password
                   </label>
-                  <div className="relative group">
-                    <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#5F8B4C] w-5 h-5 transition-all group-focus-within:text-[#D98324]" />
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-4 z-10 pointer-events-none">
+                      <KeyRound size={20} className="text-[#131010]" strokeWidth={2.5} />
+                    </div>
                     <input
                       id="newPassword"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Create a strong password"
+                      placeholder="••••••••"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className={`w-full pl-12 pr-14 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#D98324] focus:border-[#D98324] focus:outline-none transition-all duration-200 font-courier text-[#131010] ${
-                        errors.newPassword ? 'border-red-500 bg-red-50' : 'border-[#5F8B4C] bg-white'
-                      }`}
                       disabled={loading}
+                      className={`
+                        w-full px-4 py-3.5 pl-12 pr-12
+                        bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold
+                        border-2 rounded-xl transition-shadow duration-200
+                        focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
+                        placeholder:text-[#131010]/30
+                        ${errors.newPassword ? 'border-red-500 bg-red-50/50' : 'border-[#131010]'}
+                      `}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-[#5F8B4C] hover:text-[#D98324] transition-colors"
+                      className="absolute inset-y-0 right-4 flex items-center text-[#131010]/40 hover:text-[#131010] transition-colors"
                     >
-                      {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                      {showPassword ? <Eye size={20} strokeWidth={2.5} /> : <EyeOff size={20} strokeWidth={2.5} />}
                     </button>
                   </div>
                   {errors.newPassword && (
-                    <motion.p 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 font-courier text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.newPassword}
-                    </motion.p>
-                  )}
-                  {newPassword && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="mt-3 p-3 bg-white rounded-lg border border-[#5F8B4C]/20"
-                    >
-                      <p className="font-courier text-xs text-[#131010] opacity-70 mb-2">Password must contain:</p>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {[
-                          { check: newPassword.length >= 8, text: '8+ characters' },
-                          { check: /[A-Z]/.test(newPassword), text: 'Uppercase' },
-                          { check: /[a-z]/.test(newPassword), text: 'Lowercase' },
-                          { check: /\d/.test(newPassword), text: 'Number' },
-                          { check: /[!@#$%^&*(),.?":{}|<>]/.test(newPassword), text: 'Special char' }
-                        ].map((item, index) => (
-                          <div key={index} className={`flex items-center gap-1 font-courier ${item.check ? 'text-[#5F8B4C]' : 'text-[#131010] opacity-50'}`}>
-                            <CheckCircle className="w-3 h-3" />
-                            {item.text}
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
+                    <p className="mt-1 font-bold text-xs text-red-600 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" strokeWidth={2.5} /> {errors.newPassword}
+                    </p>
                   )}
                 </div>
 
-                <div>
-                  <label htmlFor="confirmPassword" className="block font-poppins text-sm font-medium text-[#5F8B4C] mb-2">
+                <div className="space-y-1.5">
+                  <label htmlFor="confirmPassword" className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
                     Confirm Password
                   </label>
-                  <div className="relative group">
-                    <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#5F8B4C] w-5 h-5 transition-all group-focus-within:text-[#D98324]" />
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-4 z-10 pointer-events-none">
+                      <Lock size={20} className="text-[#131010]" strokeWidth={2.5} />
+                    </div>
                     <input
                       id="confirmPassword"
                       type={showConfirmPassword ? 'text' : 'password'}
-                      placeholder="Confirm your new password"
+                      placeholder="••••••••"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={`w-full pl-12 pr-14 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#D98324] focus:border-[#D98324] focus:outline-none transition-all duration-200 font-courier text-[#131010] ${
-                        errors.confirmPassword ? 'border-red-500 bg-red-50' : 'border-[#5F8B4C] bg-white'
-                      }`}
                       disabled={loading}
+                      className={`
+                        w-full px-4 py-3.5 pl-12 pr-12
+                        bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold
+                        border-2 rounded-xl transition-shadow duration-200
+                        focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
+                        placeholder:text-[#131010]/30
+                        ${errors.confirmPassword ? 'border-red-500 bg-red-50/50' : 'border-[#131010]'}
+                      `}
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-[#5F8B4C] hover:text-[#D98324] transition-colors"
+                      className="absolute inset-y-0 right-4 flex items-center text-[#131010]/40 hover:text-[#131010] transition-colors"
                     >
-                      {showConfirmPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                      {showConfirmPassword ? <Eye size={20} strokeWidth={2.5} /> : <EyeOff size={20} strokeWidth={2.5} />}
                     </button>
                   </div>
                   {errors.confirmPassword && (
-                    <motion.p 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 font-courier text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.confirmPassword}
-                    </motion.p>
-                  )}
-                  {confirmPassword && newPassword === confirmPassword && (
-                    <motion.p 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 font-courier text-sm text-[#5F8B4C] flex items-center gap-1"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      Passwords match
-                    </motion.p>
+                    <p className="mt-1 font-bold text-xs text-red-600 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" strokeWidth={2.5} /> {errors.confirmPassword}
+                    </p>
                   )}
                 </div>
 
-                <motion.button
-                  whileHover={{ y: -2 }}
-                  whileTap={{ y: 0 }}
+                <button
                   onClick={resetPassword}
                   disabled={loading}
-                  className="w-full bg-[#5F8B4C] hover:bg-[#4A7039] disabled:opacity-50 disabled:cursor-not-allowed text-white font-poppins font-semibold py-4 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                  className="w-full flex items-center justify-center gap-2 bg-[#5F8B4C] text-white border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] hover:shadow-[5px_5px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none disabled:opacity-50 disabled:shadow-none disabled:translate-y-[2px] font-bold py-3.5 px-4 rounded-xl transition-all mt-6"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Resetting Password...
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-5 h-5" />
-                      Reset Password
-                    </>
-                  )}
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Lock size={18} strokeWidth={2.5} /> Confirm Reset</>}
+                </button>
+              </motion.div>
+            )}
 
-          {/* Footer */}
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="mt-8 text-center"
-          >
-            <p className="font-courier text-sm text-[#131010] opacity-70">
-              Remember your password?{' '}
-              <button
-                onClick={() => navigate('/')}
-                className="text-[#5F8B4C] hover:text-[#4A7039] font-poppins font-medium transition-colors"
-              >
-                Back to login
-              </button>
-            </p>
-          </motion.div>
+          </div>
         </div>
       </motion.div>
     </div>

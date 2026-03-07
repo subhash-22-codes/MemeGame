@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Crown,Gamepad, Timer, Trophy, Zap, Users, MessageCircle, Star, RotateCcw, Github, Linkedin, Mail, Send, Gavel, Camera, Clock, Award, Play, ArrowLeft } from 'lucide-react';
+import { Crown, Gamepad, Timer, Trophy, Zap, Users, MessageCircle, Star, RotateCcw, Github, Linkedin, Mail, Send, Gavel, Camera, Clock, Play, ArrowLeft, Twitter, CheckCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const HowToPlay: React.FC = () => {
+  // --- WIRING INTACT ---
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -13,6 +14,7 @@ const HowToPlay: React.FC = () => {
   const [activeSection, setActiveSection] = useState('hero');
   const [submitted, setSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
   useEffect(() => {
     const handleScroll = () => {
       const sections = ['hero', 'judge-selection', 'set-scene', 'meme-hunt', 'reveal', 'next-round'];
@@ -41,50 +43,46 @@ const HowToPlay: React.FC = () => {
     });
   };
 
- const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setIsLoading(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
 
-  try {
-    const response = await fetch('/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData),
-    });
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
 
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // Optional delay for UX
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Optional delay for UX
 
-    if (!response.ok) {
-      const errorData = await response.json();
+      if (!response.ok) {
+        const errorData = await response.json();
 
-      // 👇 Toast handling by status code
-      if (response.status === 409) {
-        toast.error("You’ve already submitted a message with this email.");
-      } else if (response.status === 429) {
-        toast.error("You’re submitting too fast. Please wait and try again.");
-      } else if (response.status === 400) {
-        toast.error(errorData?.error || "Invalid input. Please check your data.");
-      } else {
-        toast.error(errorData?.error || "Something went wrong.");
+        // Toast handling by status code
+        if (response.status === 409) {
+          toast.error("You’ve already submitted a message with this email.");
+        } else if (response.status === 429) {
+          toast.error("You’re submitting too fast. Please wait and try again.");
+        } else if (response.status === 400) {
+          toast.error(errorData?.error || "Invalid input. Please check your data.");
+        } else {
+          toast.error(errorData?.error || "Something went wrong.");
+        }
+
+        throw new Error(errorData?.error || 'Submission failed.');
       }
 
-      throw new Error(errorData?.error || 'Submission failed.');
+      const data = await response.json();
+      console.log('Backend response:', data);
+      toast.success("Message sent successfully!");
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Form submission error:', err);
+    } finally {
+      setIsLoading(false);
     }
-
-    const data = await response.json();
-    console.log('Backend response:', data);
-    toast.success("Message sent successfully!");
-    setSubmitted(true);
-  } catch (err) {
-    console.error('Form submission error:', err);
-    // Already handled above, this is just fallback
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-
-
+  };
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId);
@@ -92,6 +90,7 @@ const HowToPlay: React.FC = () => {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+  // ---------------------
 
   const sectionVariants = {
     hidden: { opacity: 0, y: 30 },
@@ -103,58 +102,58 @@ const HowToPlay: React.FC = () => {
   };
 
   const cardVariants = {
-    hidden: { opacity: 0, scale: 0.95 },
+    hidden: { opacity: 0, scale: 0.98 },
     visible: { 
       opacity: 1, 
       scale: 1,
       transition: { duration: 0.3, ease: "easeOut" }
     },
     hover: { 
-      scale: 1.01,
+      y: -4,
       transition: { duration: 0.2 }
     }
   };
 
   const steps = [
-    { id: 'judge-selection', title: 'Judge Selection', icon: Crown, color: '#D98324' },
-    { id: 'set-scene', title: 'Set Scene', icon: MessageCircle, color: '#5F8B4C' },
-    { id: 'meme-hunt', title: 'Meme Hunt', icon: Timer, color: '#D98324' },
-    { id: 'reveal', title: 'The Reveal', icon: Trophy, color: '#5F8B4C' },
-    { id: 'next-round', title: 'Next Round', icon: Zap, color: '#D98324' }
+    { id: 'judge-selection', title: 'Judge Selection', icon: Crown, color: 'bg-[#D98324]' },
+    { id: 'set-scene', title: 'Set Scene', icon: MessageCircle, color: 'bg-[#5F8B4C]' },
+    { id: 'meme-hunt', title: 'Meme Hunt', icon: Timer, color: 'bg-[#D98324]' },
+    { id: 'reveal', title: 'The Reveal', icon: Trophy, color: 'bg-[#5F8B4C]' },
+    { id: 'next-round', title: 'Next Round', icon: Zap, color: 'bg-[#D98324]' }
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFDDAB] via-[#FFE4B8] to-[#FFF0CC]">
+    <div className="min-h-screen bg-[#FFDDAB] font-poppins selection:bg-[#D98324] selection:text-white">
+      
       {/* Navigation Header */}
-      <header className="bg-white/90 backdrop-blur-sm border-b border-[#D98324]/20 sticky top-0 z-50">
+      <header className="bg-[#FFDDAB] border-b-4 border-[#131010] sticky top-0 z-50 transition-all">
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-3">
               <button 
                 onClick={() => window.history.back()}
-                className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-lg flex items-center justify-center hover:scale-105 transition-transform"
+                className="w-10 h-10 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none rounded-lg flex items-center justify-center transition-all"
               >
-                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                <ArrowLeft className="w-5 h-5 text-[#131010]" strokeWidth={3} />
               </button>
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-lg flex items-center justify-center">
-                <Play className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+              <div className="w-10 h-10 bg-[#5F8B4C] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg flex items-center justify-center">
+                <Play className="w-5 h-5 text-white fill-current" strokeWidth={2} />
               </div>
-              <h1 className="text-lg sm:text-2xl font-bold text-[#131010]" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                <span className="hidden sm:inline">MemeGame Guide</span>
-                <span className="sm:hidden">Guide</span>
+              <h1 className="text-xl sm:text-2xl font-black text-[#131010] tracking-tight hidden sm:block">
+                Rulebook
               </h1>
             </div>
             
-            {/* Desktop Navigation */}
-            <nav className="hidden lg:flex items-center gap-4">
+            {/* Desktop Navigation (Tactile Tabs) */}
+            <nav className="hidden lg:flex items-center gap-2">
               {steps.map((step, index) => (
                 <button
                   key={step.id}
                   onClick={() => scrollToSection(step.id)}
-                  className={`px-3 py-2 rounded-lg transition-all text-sm ${
+                  className={`px-4 py-2 font-bold text-sm rounded-lg border-2 transition-all ${
                     activeSection === step.id 
-                      ? 'bg-[#D98324] text-white' 
-                      : 'text-[#131010] hover:bg-[#D98324]/10'
+                      ? 'bg-[#131010] border-[#131010] text-white shadow-[2px_2px_0px_0px_#D98324]' 
+                      : 'bg-transparent border-transparent text-[#131010]/60 hover:text-[#131010] hover:bg-[#131010]/5'
                   }`}
                   style={{ fontFamily: 'Courier, monospace' }}
                 >
@@ -164,13 +163,13 @@ const HowToPlay: React.FC = () => {
             </nav>
 
             {/* Mobile Menu Indicator */}
-            <div className="lg:hidden flex items-center gap-1">
+            <div className="lg:hidden flex items-center gap-1.5 bg-white border-2 border-[#131010] p-1.5 rounded-full shadow-[2px_2px_0px_0px_#131010]">
               {steps.map((step) => (
                 <button
                   key={step.id}
                   onClick={() => scrollToSection(step.id)}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    activeSection === step.id ? 'bg-[#D98324] w-6' : 'bg-[#D98324]/30'
+                  className={`h-2.5 rounded-full transition-all ${
+                    activeSection === step.id ? 'bg-[#131010] w-6' : 'bg-[#131010]/20 w-2.5'
                   }`}
                 />
               ))}
@@ -182,74 +181,44 @@ const HowToPlay: React.FC = () => {
       {/* Hero Section */}
       <motion.section 
         id="hero"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center"
+        className="container mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center relative"
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
       >
-        <motion.div
-          initial={{ opacity: 0, y: -30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-        >
-          <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-[#D98324] mb-4 sm:mb-6" 
-              style={{ fontFamily: 'Poppins, system-ui, sans-serif', fontWeight: 800 }}>
-            How to Play
-            <span className="text-[#5F8B4C] block">MemeGame</span>
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+          <div className="inline-block px-4 py-1.5 rounded-full bg-white border-2 border-[#131010] text-[#131010] font-bold text-sm mb-6 shadow-[2px_2px_0px_0px_#131010] transform -rotate-1 uppercase tracking-widest font-courier">
+            Player Manual
+          </div>
+          <h1 className="text-5xl sm:text-6xl md:text-8xl font-black text-[#131010] mb-6 tracking-tight leading-none">
+            How to Play <br/>
+            <span className="text-[#D98324] drop-shadow-[4px_4px_0px_#131010]">MemeGame</span>
           </h1>
-          <p className="text-lg sm:text-xl md:text-2xl text-[#131010] mb-6 sm:mb-8 max-w-3xl mx-auto px-4"
-             style={{ fontFamily: 'Monaco, Courier, monospace' }}>
-            A hilarious multiplayer game where creativity meets comedy, and the best meme wins the round.
+          <p className="text-lg sm:text-xl font-medium text-[#131010]/80 mb-12 max-w-2xl mx-auto leading-relaxed">
+            A hilarious multiplayer game where creativity meets comedy. Read the rules below or just jump in and figure it out.
           </p>
         </motion.div>
 
-        {/* Game Preview Images */}
+        {/* Game Preview Images (Bento Grid) */}
         <motion.div
-          className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 max-w-4xl mx-auto mb-8 sm:mb-12"
-          initial={{ opacity: 0, scale: 0.9 }}
+          className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-5 max-w-5xl mx-auto mb-16"
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
+          transition={{ delay: 0.2, duration: 0.5 }}
         >
-          <div className="relative overflow-hidden rounded-lg aspect-square bg-gradient-to-br from-[#5F8B4C] to-[#4A7A3C]">
-            <img 
-              src="JS.png" 
-              alt="Gaming setup"
-              className="w-full h-full object-cover opacity-80"
-            />
-            <div className="absolute inset-0 bg-[#5F8B4C]/40 flex items-center justify-center">
-              <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+          {[
+            { icon: Users, color: 'bg-[#5F8B4C]', img: 'JS.png' },
+            { icon: Gamepad, color: 'bg-[#D98324]', img: 'chat.png' },
+            { icon: Timer, color: 'bg-[#131010]', img: 'memetime.png' },
+            { icon: Trophy, color: 'bg-[#FFDDAB]', img: 'winner.png', iconColor: 'text-[#131010]' }
+          ].map((item, i) => (
+            <div key={i} className="relative overflow-hidden rounded-xl aspect-square border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] group">
+              <img src={item.img} alt="Preview" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+              <div className={`absolute inset-0 ${item.color}/60 flex items-center justify-center backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-300`}>
+                <item.icon className={`w-10 h-10 ${item.iconColor || 'text-white'}`} strokeWidth={2.5} />
+              </div>
             </div>
-          </div>
-          <div className="relative overflow-hidden rounded-lg aspect-square bg-gradient-to-br from-[#D98324] to-[#B8741E]">
-            <img 
-              src="chat.png" 
-              alt="Funny reaction"
-              className="w-full h-full object-cover opacity-80"
-            />
-            <div className="absolute inset-0 bg-[#D98324]/40 flex items-center justify-center">
-              <Gamepad className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-            </div>
-          </div>
-          <div className="relative overflow-hidden rounded-lg aspect-square bg-gradient-to-br from-[#5F8B4C] to-[#4A7A3C]">
-            <img 
-              src="memetime.png" 
-              alt="Timer countdown"
-              className="w-full h-full object-cover opacity-80"
-            />
-            <div className="absolute inset-0 bg-[#5F8B4C]/40 flex items-center justify-center">
-              <Timer className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-            </div>
-          </div>
-          <div className="relative overflow-hidden rounded-lg aspect-square bg-gradient-to-br from-[#D98324] to-[#B8741E]">
-            <img 
-              src="winner.png" 
-              alt="Trophy celebration"
-              className="w-full h-full object-cover opacity-80"
-            />
-            <div className="absolute inset-0 bg-[#D98324]/40 flex items-center justify-center">
-              <Trophy className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-            </div>
-          </div>
+          ))}
         </motion.div>
 
         {/* Scroll Indicator */}
@@ -257,753 +226,402 @@ const HowToPlay: React.FC = () => {
           className="flex flex-col items-center gap-3"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.5 }}
+          transition={{ delay: 0.6 }}
         >
-          <p className="text-sm sm:text-base text-[#131010]" style={{ fontFamily: 'Courier, monospace' }}>
-            Scroll to learn the game
+          <p className="text-sm font-bold text-[#131010]/50 uppercase tracking-widest font-courier">
+            Scroll to learn
           </p>
           <motion.div
             animate={{ y: [0, 8, 0] }}
             transition={{ duration: 1.5, repeat: Infinity }}
-            className="w-6 h-10 border-2 border-[#D98324] rounded-full flex justify-center"
+            className="w-6 h-10 border-2 border-[#131010] rounded-full flex justify-center bg-white"
           >
-            <div className="w-1 h-3 bg-[#D98324] rounded-full mt-2"></div>
+            <div className="w-1.5 h-3 bg-[#131010] rounded-full mt-1.5"></div>
           </motion.div>
         </motion.div>
       </motion.section>
 
-      {/* Step 1: Judge Selection */}
-      <motion.section 
-        id="judge-selection"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16"
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={sectionVariants}
-      >
-        <motion.div 
-          className="bg-white rounded-2xl p-6 sm:p-8 md:p-12 shadow-lg border border-[#D98324]/20"
-          variants={cardVariants}
-          whileHover="hover"
-        >
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div>
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-[#D98324] to-[#B8741E] rounded-xl flex items-center justify-center">
-                  <Crown className="w-6 h-6 sm:w-10 sm:h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#D98324]"
-                      style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                    Judge Selection
-                  </h2>
-                  <p className="text-[#5F8B4C] text-base sm:text-lg" style={{ fontFamily: 'Courier, monospace' }}>
-                    Choose your Meme Overlord
-                  </p>
-                </div>
-              </div>
-              
-              <p className="text-base sm:text-lg text-[#131010] mb-6 sm:mb-8 leading-relaxed" 
-                 style={{ fontFamily: 'Courier, monospace' }}>
-                The host decides how to select the judge who will evaluate memes and determine the winner of each round.
-              </p>
-              
-              <div className="space-y-3 sm:space-y-4">
-                <motion.div 
-                  className="flex items-center gap-3 sm:gap-4 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl"
-                  whileHover={{ scale: 1.02 }}
-                >
-                  <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
+      {/* --- STEPS --- */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-24 space-y-12 sm:space-y-16">
+        
+        {/* Step 1: Judge Selection */}
+        <motion.section id="judge-selection" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
+          <motion.div className="bg-white rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
+            <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-[#D98324] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center -rotate-3">
+                    <Crown className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
+                  </div>
                   <div>
-                    <h4 className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Random Selection</h4>
-                    <p className="text-xs sm:text-sm opacity-90" style={{ fontFamily: 'Courier, monospace' }}>Spin the wheel of destiny</p>
+                    <h2 className="text-3xl font-black text-[#131010] tracking-tight">1. Judge Selection</h2>
+                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Choose your Overlord</p>
                   </div>
-                </motion.div>
-                
-                <motion.div 
-                  className="flex items-center gap-3 sm:gap-4 bg-gradient-to-r from-[#D98324] to-[#B8741E] text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl"
-                  whileHover={{ scale: 1.02 }}
-                >
-                  <Users className="w-5 h-5 sm:w-6 sm:h-6" />
-                  <div>
-                    <h4 className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Host Assignment</h4>
-                    <p className="text-xs sm:text-sm opacity-90" style={{ fontFamily: 'Courier, monospace' }}>Strategic judge selection</p>
-                  </div>
-                </motion.div>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <div className="relative overflow-hidden rounded-2xl">
-                <img 
-                  src="judge2.jpg" 
-                  alt="Judge selection process"
-                  className="w-full h-60 sm:h-80 object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#131010]/60 to-transparent"></div>
-                <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6">
-                  <div className="bg-none rounded-lg p-3 sm:p-4">
-                    <p className="text-white font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                      The Judge Has Arrived!
-                    </p>
-                    <p className="text-xs sm:text-sm text-white/70" style={{ fontFamily: 'Courier, monospace' }}>
-                      Ready to evaluate your finest memes
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      </motion.section>
-
-      {/* Step 2: Set the Scene */}
-      <motion.section 
-        id="set-scene"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16"
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={sectionVariants}
-      >
-        <motion.div 
-          className="bg-white rounded-2xl p-6 sm:p-8 md:p-12 shadow-lg border border-[#5F8B4C]/20"
-          variants={cardVariants}
-          whileHover="hover"
-        >
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div className="relative order-2 lg:order-1">
-              <div className="relative overflow-hidden rounded-2xl">
-                <img 
-                  src="codeworks.jpg" 
-                  alt="Creative writing and thinking"
-                  className="w-full h-60 sm:h-80 object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#131010]/60 to-transparent"></div>
-                <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6">
-                  <div className="bg-none text-white rounded-lg p-3 sm:p-4">
-                    <p className="font-bold mb-2 text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                      "When your code works on the first try..."
-                    </p>
-                    <p className="text-xs sm:text-sm opacity-90" style={{ fontFamily: 'Courier, monospace' }}>
-                      Judge's challenge is set!
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="order-1 lg:order-2">
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-xl flex items-center justify-center">
-                  <MessageCircle className="w-6 h-6 sm:w-10 sm:h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#5F8B4C]"
-                      style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                    Set the Scene
-                  </h2>
-                  <p className="text-[#D98324] text-base sm:text-lg" style={{ fontFamily: 'Courier, monospace' }}>
-                    Judge drops a meme-worthy line
-                  </p>
-                </div>
-              </div>
-              
-              <p className="text-base sm:text-lg text-[#131010] mb-6 sm:mb-8 leading-relaxed" 
-                 style={{ fontFamily: 'Courier, monospace' }}>
-                The judge creates a scenario, phrase, or situation that players must match with the perfect meme from the gallery.
-              </p>
-              
-              <div className="bg-gradient-to-r from-[#FFDDAB] to-[#FFE4B8] p-4 sm:p-6 rounded-xl border-2 border-[#D98324]/30">
-                <h4 className="font-bold text-[#D98324] mb-3 text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                  Example Scenarios:
-                </h4>
-                <ul className="space-y-2 text-[#131010] text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>
-                  <li className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[#5F8B4C] rounded-full"></div>
-                    "When you finally understand recursion"
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[#5F8B4C] rounded-full"></div>
-                    "Trying to explain APIs to non-developers"
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[#5F8B4C] rounded-full"></div>
-                    "When the client changes requirements"
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      </motion.section>
-
-      {/* Step 3: Meme Hunt */}
-      <motion.section 
-        id="meme-hunt"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16"
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={sectionVariants}
-      >
-        <motion.div 
-          className="bg-white rounded-2xl p-6 sm:p-8 md:p-12 shadow-lg border border-[#D98324]/20"
-          variants={cardVariants}
-          whileHover="hover"
-        >
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div>
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-[#D98324] to-[#B8741E] rounded-xl flex items-center justify-center">
-                  <Timer className="w-6 h-6 sm:w-10 sm:h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#D98324]"
-                      style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                    Meme Hunt
-                  </h2>
-                  <p className="text-[#5F8B4C] text-base sm:text-lg" style={{ fontFamily: 'Courier, monospace' }}>
-                    30-45 seconds to find the perfect match
-                  </p>
-                </div>
-              </div>
-              
-              <p className="text-base sm:text-lg text-[#131010] mb-6 sm:mb-8 leading-relaxed" 
-                 style={{ fontFamily: 'Courier, monospace' }}>
-                Players race against time to browse through our curated collection of 500+ memes and select the one that best matches the judge's scenario.
-              </p>
-              
-              <div className="space-y-3 sm:space-y-4">
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-[#D98324]" />
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Countdown timer creates pressure</span>
-                </div>
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-[#5F8B4C]" />
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Extensive meme library to choose from</span>
-                </div>
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <Award className="w-5 h-5 sm:w-6 sm:h-6 text-[#D98324]" />
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Strategy meets speed</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <div className="relative overflow-hidden rounded-2xl">
-                <img 
-                  src="memenights.jpg" 
-                  alt="Person focused on computer screen"
-                  className="w-full h-60 sm:h-80 object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#131010]/60 to-transparent"></div>
-                
-                {/* Timer Overlay */}
-                <div className="absolute top-4 sm:top-6 right-4 sm:right-6">
-                  <motion.div
-                    className="bg-[#D98324] text-white px-3 sm:px-4 py-2 rounded-full font-bold text-lg sm:text-xl"
-                    style={{ fontFamily: 'Monaco, monospace' }}
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ duration: 1, repeat: Infinity }}
-                  >
-                    0:32
-                  </motion.div>
                 </div>
                 
-                {/* Meme Gallery Preview */}
-                <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6">
-                  <div className="bg-none rounded-lg p-3 sm:p-4">
-                    <p className="text-white font-bold mb-2 text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                      Browsing Meme Gallery
-                    </p>
-                    <div className="grid grid-cols-4 gap-1 sm:gap-2">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
-                          className="w-8 h-8 sm:w-12 sm:h-12 bg-gradient-to-br from-[#5F8B4C] to-[#4A7A3C] rounded opacity-70 flex items-center justify-center"
-                        >
-                          <span className="text-white text-xs font-bold">{i}</span>
-                        </div>
-                      ))}
+                <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
+                  The host decides how to select the judge who will evaluate memes and determine the winner of each round.
+                </p>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4 bg-[#FFDDAB]/20 border-2 border-[#131010] px-5 py-4 rounded-xl shadow-[2px_2px_0px_0px_#131010]">
+                    <div className="bg-white p-2 rounded-lg border-2 border-[#131010]"><RotateCcw className="w-5 h-5 text-[#131010]" /></div>
+                    <div>
+                      <h4 className="font-black text-[#131010]">Random Selection</h4>
+                      <p className="text-sm font-medium text-[#131010]/60">Spin the wheel of destiny.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 bg-[#FFDDAB]/20 border-2 border-[#131010] px-5 py-4 rounded-xl shadow-[2px_2px_0px_0px_#131010]">
+                    <div className="bg-white p-2 rounded-lg border-2 border-[#131010]"><Users className="w-5 h-5 text-[#131010]" /></div>
+                    <div>
+                      <h4 className="font-black text-[#131010]">Host Assignment</h4>
+                      <p className="text-sm font-medium text-[#131010]/60">Strategic judge selection.</p>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </motion.div>
-      </motion.section>
-
-      {/* Step 4: The Reveal */}
-      <motion.section 
-        id="reveal"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16"
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={sectionVariants}
-      >
-        <motion.div 
-          className="bg-white rounded-2xl p-6 sm:p-8 md:p-12 shadow-lg border border-[#5F8B4C]/20"
-          variants={cardVariants}
-          whileHover="hover"
-        >
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div className="relative order-2 lg:order-1">
-              <div className="relative overflow-hidden rounded-2xl">
-                <img 
-                  src="winchillguy.jpg" 
-                  alt="People laughing and celebrating"
-                  className="w-full h-60 sm:h-80 object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#131010]/60 to-transparent"></div>
-                
-                {/* Score Display */}
-                <div className="absolute top-4 sm:top-6 left-4 sm:left-6 right-4 sm:right-6">
-                  {/* <div className="bg-[#5F8B4C] text-white rounded-lg p-2 sm:p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Player Score</span>
-                      <div className="flex gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className="w-3 h-3 sm:w-4 sm:h-4 fill-current text-yellow-300" />
-                        ))}
-                      </div>
-                    </div>
-                  </div> */}
-                </div>
-                
-                <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6">
-                  <div className="bg-white/90 backdrop-blur-sm rounded-lg p-3 sm:p-4">
-                    <p className="text-[#131010] font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                      Round Winner Announced!
-                    </p>
-                    <p className="text-xs sm:text-sm text-[#131010]/70" style={{ fontFamily: 'Courier, monospace' }}>
-                      Perfect meme match earns the points
-                    </p>
-                  </div>
+              
+              <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
+                <img src="judge2.jpg" alt="Judge" className="w-full h-full object-cover" />
+                <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
+                  <p className="font-black text-sm text-[#131010]">The Judge Has Arrived!</p>
+                  <p className="text-xs font-bold text-[#131010]/60 font-courier">Ready to evaluate your memes</p>
                 </div>
               </div>
             </div>
+          </motion.div>
+        </motion.section>
 
-            <div className="order-1 lg:order-2">
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-xl flex items-center justify-center">
-                  <Trophy className="w-6 h-6 sm:w-10 sm:h-10 text-white" />
+        {/* Step 2: Set the Scene */}
+        <motion.section id="set-scene" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
+          <motion.div className="bg-[#5F8B4C] rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
+            <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+              <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80 order-2 lg:order-1">
+                <img src="codeworks.jpg" alt="Code works" className="w-full h-full object-cover" />
+                <div className="absolute bottom-4 right-4 bg-[#FFDDAB] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3 max-w-[80%]">
+                  <p className="font-black text-sm text-[#131010]">"When your code works on the first try..."</p>
+                  <p className="text-xs font-bold text-[#131010]/60 font-courier mt-1">Challenge Set!</p>
                 </div>
-                <div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#5F8B4C]"
-                      style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                    The Reveal
-                  </h2>
-                  <p className="text-[#D98324] text-base sm:text-lg" style={{ fontFamily: 'Courier, monospace' }}>
-                    Showcase and score the submissions
-                  </p>
+              </div>
+
+              <div className="order-1 lg:order-2 text-white">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center rotate-3">
+                    <MessageCircle className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black tracking-tight">2. Set the Scene</h2>
+                    <p className="text-[#FFDDAB] font-bold font-courier tracking-widest uppercase text-sm">Drop a meme-worthy line</p>
+                  </div>
+                </div>
+                
+                <p className="text-lg text-white/90 mb-8 font-medium leading-relaxed">
+                  The judge creates a scenario, phrase, or situation that players must match with the perfect meme from their deck.
+                </p>
+                
+                <div className="bg-[#131010] p-5 rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010]">
+                  <h4 className="font-bold text-[#FFDDAB] mb-3 text-sm uppercase tracking-wider font-courier">Example Scenarios:</h4>
+                  <ul className="space-y-3 text-white font-medium">
+                    <li className="flex items-start gap-2">
+                      <Zap className="w-5 h-5 text-[#D98324] shrink-0" />
+                      "When you finally understand recursion"
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Zap className="w-5 h-5 text-[#D98324] shrink-0" />
+                      "Trying to explain APIs to non-developers"
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.section>
+
+        {/* Step 3: Meme Hunt */}
+        <motion.section id="meme-hunt" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
+          <motion.div className="bg-white rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
+            <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-[#D98324] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center -rotate-3">
+                    <Timer className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black text-[#131010] tracking-tight">3. Meme Hunt</h2>
+                    <p className="text-[#5F8B4C] font-bold font-courier tracking-widest uppercase text-sm">Beat the Clock</p>
+                  </div>
+                </div>
+                
+                <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
+                  Players race against time to browse through our curated collection of memes and select the one that best matches the judge's scenario.
+                </p>
+                
+                <div className="space-y-4 font-bold text-[#131010]">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-[#FFDDAB] rounded-md border-2 border-[#131010]"><Clock className="w-4 h-4" /></div>
+                    <span>Countdown timer creates pressure</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-[#5F8B4C] rounded-md border-2 border-[#131010]"><Camera className="w-4 h-4 text-white" /></div>
+                    <span>Extensive library to choose from</span>
+                  </div>
                 </div>
               </div>
               
-              <p className="text-base sm:text-lg text-[#131010] mb-6 sm:mb-8 leading-relaxed" 
-                 style={{ fontFamily: 'Courier, monospace' }}>
-                Each player's meme selection is revealed alongside their name. The judge scores each submission, with the best match earning maximum points.
-              </p>
-              
-              <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                <motion.div 
-                  className="flex items-center gap-3 sm:gap-4 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl"
-                  whileHover={{ scale: 1.02 }}
-                >
-                  <Gavel className="w-5 h-5 sm:w-6 sm:h-6" />
-                  <div className="flex-1">
-                    <h4 className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Judge Evaluation</h4>
-                    <p className="text-xs sm:text-sm opacity-90" style={{ fontFamily: 'Courier, monospace' }}>Scores each meme on relevance and humor</p>
-                  </div>
-                  <div className="flex gap-1">
-                    {[...Array(10)].map((_, i) => (
-                      <Star key={i} className="w-2 h-2 sm:w-3 sm:h-3 fill-current" />
+              <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
+                <img src="memenights.jpg" alt="Hunt" className="w-full h-full object-cover" />
+                <div className="absolute top-4 right-4 bg-[#D98324] text-[#131010] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] px-4 py-2 rounded-full font-black text-xl">
+                  0:32
+                </div>
+                <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
+                  <p className="font-black text-sm text-[#131010] mb-2">Browsing Gallery...</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="w-10 h-10 bg-[#FFDDAB] border border-[#131010] rounded-md flex items-center justify-center text-xs font-bold opacity-70">IMG</div>
                     ))}
                   </div>
-                </motion.div>
-                
-                <motion.div 
-                  className="flex items-center gap-3 sm:gap-4 bg-gradient-to-r from-[#D98324] to-[#B8741E] text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl"
-                  whileHover={{ scale: 1.02 }}
-                >
-                  <Award className="w-5 h-5 sm:w-6 sm:h-6" />
-                  <div className="flex-1">
-                    <h4 className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Winner Celebration</h4>
-                    <p className="text-xs sm:text-sm opacity-90" style={{ fontFamily: 'Courier, monospace' }}>Best meme gets spotlight and points</p>
-                  </div>
-                  <span className="text-xl sm:text-2xl">🎉</span>
-                </motion.div>
+                </div>
               </div>
             </div>
-          </div>
-        </motion.div>
-      </motion.section>
+          </motion.div>
+        </motion.section>
 
-      {/* Step 5: Next Round */}
-      <motion.section 
-        id="next-round"
-        className="container mx-auto px-4 sm:px-6 py-12 sm:py-16"
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={sectionVariants}
-      >
-        <motion.div 
-          className="bg-white rounded-2xl p-6 sm:p-8 md:p-12 shadow-lg border border-[#D98324]/20"
-          variants={cardVariants}
-          whileHover="hover"
-        >
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div>
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-[#D98324] to-[#B8741E] rounded-xl flex items-center justify-center">
-                  <Zap className="w-6 h-6 sm:w-10 sm:h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#D98324]"
-                      style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                    Next Round
-                  </h2>
-                  <p className="text-[#5F8B4C] text-base sm:text-lg" style={{ fontFamily: 'Courier, monospace' }}>
-                    Keep the momentum going
-                  </p>
+        {/* Step 4: The Reveal */}
+        <motion.section id="reveal" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
+          <motion.div className="bg-[#131010] rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#D98324]" variants={cardVariants} whileHover="hover">
+            <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+              <div className="relative rounded-2xl border-4 border-[#D98324] shadow-[6px_6px_0px_0px_#D98324] overflow-hidden bg-white h-60 sm:h-80 order-2 lg:order-1">
+                <img src="winchillguy.jpg" alt="Reveal" className="w-full h-full object-cover" />
+                <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
+                  <p className="font-black text-sm text-[#131010]">Round Winner!</p>
+                  <p className="text-xs font-bold text-[#131010]/60 font-courier">Perfect match earned the points</p>
                 </div>
               </div>
-              
-              <p className="text-base sm:text-lg text-[#131010] mb-6 sm:mb-8 leading-relaxed" 
-                 style={{ fontFamily: 'Courier, monospace' }}>
-                The game continues with new judges, fresh scenarios, and more hilarious meme matches. Each round builds the competitive excitement.
-              </p>
-              
-              <div className="space-y-3 sm:space-y-4">
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <div className="w-3 h-3 bg-[#5F8B4C] rounded-full"></div>
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Rotate judges or keep the same one</span>
+
+              <div className="order-1 lg:order-2 text-white">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-[#5F8B4C] border-2 border-[#D98324] shadow-[2px_2px_0px_0px_#D98324] rounded-xl flex items-center justify-center rotate-3">
+                    <Trophy className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black tracking-tight text-white">4. The Reveal</h2>
+                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Score the Submissions</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <div className="w-3 h-3 bg-[#D98324] rounded-full"></div>
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Fresh scenarios keep it interesting</span>
-                </div>
-                <div className="flex items-center gap-3 text-[#131010] text-sm sm:text-base">
-                  <div className="w-3 h-3 bg-[#5F8B4C] rounded-full"></div>
-                  <span style={{ fontFamily: 'Courier, monospace' }}>Points accumulate across rounds</span>
+                
+                <p className="text-lg text-white/80 mb-8 font-medium leading-relaxed">
+                  Each player's meme is revealed. The judge rates each submission, and the funniest match takes the points.
+                </p>
+                
+                <div className="grid gap-4">
+                  <div className="flex items-center gap-4 bg-white/10 border-2 border-[#D98324] px-5 py-4 rounded-xl">
+                    <Gavel className="w-6 h-6 text-[#D98324]" />
+                    <div>
+                      <h4 className="font-bold text-white">Judge Evaluation</h4>
+                      <div className="flex gap-1 mt-1">
+                        {[...Array(5)].map((_, i) => <Star key={i} className="w-4 h-4 fill-[#D98324] text-[#D98324]" />)}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            
-            <div className="bg-gradient-to-br from-[#FFDDAB] to-[#FFE4B8] p-6 sm:p-8 rounded-2xl border-2 border-[#5F8B4C]/30">
-              <h3 className="text-xl sm:text-2xl font-bold text-[#D98324] mb-4 sm:mb-6 text-center" 
-                  style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                Current Leaderboard
-              </h3>
-              <div className="space-y-3 sm:space-y-4">
-                {[
-                  { name: "CodeMaster", score: 245, position: 1, avatar: "🏆" },
-                  { name: "MemeQueen", score: 198, position: 2, avatar: "👑" },
-                  { name: "LaughLord", score: 176, position: 3, avatar: "😂" },
-                  { name: "JokeNinja", score: 134, position: 4, avatar: "🥷" }
-                ].map((player) => (
-                  <motion.div
-                    key={player.name}
-                    className="flex items-center justify-between bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-[#D98324]/10"
-                    whileHover={{ y: -2, shadow: "0 8px 25px rgba(217, 131, 36, 0.15)" }}
-                  >
-                    <div className="flex items-center gap-3 sm:gap-4">
-                      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base ${
-                        player.position === 1 ? 'bg-gradient-to-r from-[#D98324] to-[#B8741E]' : 
-                        player.position === 2 ? 'bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C]' : 
-                        'bg-gray-400'
-                      }`} style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                        {player.position}
-                      </div>
-                      <div>
-                        <div className="font-bold text-[#131010] flex items-center gap-2 text-sm sm:text-base" 
-                             style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                          <span>{player.avatar}</span>
-                          {player.name}
+          </motion.div>
+        </motion.section>
+
+        {/* Step 5: Next Round & Leaderboard */}
+        <motion.section id="next-round" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
+          <motion.div className="bg-white rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
+            <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-[#D98324] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center rotate-3">
+                    <Zap className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black text-[#131010] tracking-tight">5. Next Round</h2>
+                    <p className="text-[#5F8B4C] font-bold font-courier tracking-widest uppercase text-sm">Keep the momentum going</p>
+                  </div>
+                </div>
+                
+                <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
+                  The game continues with new judges, fresh scenarios, and more hilarious meme matches. Points accumulate until a final winner is crowned!
+                </p>
+                
+                <div className="space-y-4 font-bold text-[#131010]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 bg-[#5F8B4C] border-2 border-[#131010] rounded-full shrink-0"></div>
+                    <span>Rotate judges or keep the same one</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 bg-[#D98324] border-2 border-[#131010] rounded-full shrink-0"></div>
+                    <span>Fresh scenarios keep it interesting</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 bg-[#FFDDAB] border-2 border-[#131010] rounded-full shrink-0"></div>
+                    <span>Watch the leaderboard heat up</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Leaderboard Bento Box */}
+              <div className="bg-[#FFDDAB] p-6 sm:p-8 rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010]">
+                <h3 className="text-xl sm:text-2xl font-black text-[#131010] mb-6 text-center tracking-tight">
+                  Current Leaderboard
+                </h3>
+                <div className="space-y-3">
+                  {[
+                    { name: "CodeMaster", score: 245, position: 1, avatar: "🏆" },
+                    { name: "MemeQueen", score: 198, position: 2, avatar: "👑" },
+                    { name: "LaughLord", score: 176, position: 3, avatar: "😂" },
+                    { name: "JokeNinja", score: 134, position: 4, avatar: "🥷" }
+                  ].map((player) => (
+                    <div key={player.name} className="flex items-center justify-between bg-white p-3 sm:p-4 rounded-xl border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#131010] transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-[#131010] font-black border-2 border-[#131010] ${
+                          player.position === 1 ? 'bg-[#D98324]' : 
+                          player.position === 2 ? 'bg-[#5F8B4C]' : 
+                          'bg-gray-200'
+                        }`}>
+                          {player.position}
                         </div>
-                        <p className="text-xs sm:text-sm text-[#131010]/60" style={{ fontFamily: 'Courier, monospace' }}>
-                          Round Champion
+                        <div>
+                          <div className="font-bold text-[#131010] flex items-center gap-2 text-sm sm:text-base">
+                            <span>{player.avatar}</span> {player.name}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg sm:text-xl font-black text-[#131010] font-poppins">
+                          {player.score}
+                        </div>
+                        <p className="text-[10px] font-bold text-[#131010]/60 font-courier uppercase tracking-wider">
+                          pts
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg sm:text-2xl font-black text-[#5F8B4C]" 
-                           style={{ fontFamily: 'Monaco, monospace' }}>
-                        {player.score}
-                      </div>
-                      <p className="text-xs sm:text-sm text-[#131010]/60" style={{ fontFamily: 'Courier, monospace' }}>
-                        points
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
-        </motion.div>
-      </motion.section>
 
-      {/* Developer Contact Section */}
+            </div>
+          </motion.div>
+        </motion.section>
+
+      </div>
+
+      {/* Developer Contact & Footer Section */}
       <motion.footer 
-        className="bg-[#131010] text-white py-12 sm:py-20"
+        className="bg-white border-t-4 border-[#131010] py-16 sm:py-24"
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-100px" }}
         variants={sectionVariants}
       >
-        <div className="container mx-auto px-4 sm:px-6">
-          <motion.div
-            className="text-center mb-12 sm:mb-16"
-            variants={cardVariants}
-          >
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#D98324] to-[#B8741E] rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6">
-              <span className="text-2xl sm:text-3xl">👨‍💻</span>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-16">
+            <div className="w-20 h-20 bg-[#FFDDAB] border-4 border-[#131010] shadow-[4px_4px_0px_0px_#131010] rounded-2xl flex items-center justify-center mx-auto mb-6 -rotate-3">
+              <span className="text-4xl">👨‍💻</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-3 sm:mb-4 text-[#D98324]" 
-                style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-              Subhash Yaganti
-            </h2>
-            <p className="text-lg sm:text-xl text-gray-300 mb-3 sm:mb-4" style={{ fontFamily: 'Monaco, monospace' }}>
-              Full Stack Developer & Creator of MemeGame
+            <h2 className="text-4xl sm:text-5xl font-black text-[#131010] mb-4">Subhash Yaganti</h2>
+            <p className="text-xl font-bold text-[#5F8B4C] font-courier uppercase tracking-widest mb-4">Creator of MemeGame</p>
+            <p className="text-[#131010]/70 font-medium max-w-2xl mx-auto text-lg">
+              Full Stack Developer passionate about building engaging digital experiences that bring people together through humor.
             </p>
-            <p className="text-gray-400 max-w-2xl mx-auto text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>
-              Passionate about building engaging digital experiences that bring people together through technology and humor.
-            </p>
-          </motion.div>
+          </div>
           
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 max-w-6xl mx-auto">
-            {/* Contact Form */}
-            {!submitted ? (
-                <motion.div
-                  className="bg-white rounded-2xl p-6 sm:p-8 text-[#131010]"
-                  variants={cardVariants}
-                >
-                  <h3
-                    className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-[#D98324]"
-                    style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}
-                  >
-                    Let's Collaborate
-                  </h3>
-
-                  <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-                    <div>
-                      <label
-                        className="block text-sm font-bold mb-2 text-[#131010]"
-                        style={{ fontFamily: 'Courier, monospace' }}
-                      >
-                        Name
-                      </label>
+          <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
+            
+            {/* Contact Form (Tactile Bento) */}
+            <div className="bg-[#FFDDAB] rounded-3xl p-8 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]">
+              {!submitted ? (
+                <>
+                  <h3 className="text-2xl font-black mb-6 text-[#131010]">Let's Collaborate</h3>
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">Name</label>
                       <input
                         type="text"
                         name="name"
                         value={formData.name}
                         onChange={handleInputChange}
-                        className="w-full p-3 sm:p-4 border-2 border-[#5F8B4C]/30 rounded-xl focus:outline-none focus:border-[#D98324] transition-colors bg-[#FFDDAB]/20 text-sm sm:text-base"
-                        placeholder="Your name"
-                        style={{ fontFamily: 'Courier, monospace', fontSize: '16px' }}
                         required
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
                       />
                     </div>
-
-                    <div>
-                      <label
-                        className="block text-sm font-bold mb-2 text-[#131010]"
-                        style={{ fontFamily: 'Courier, monospace' }}
-                      >
-                        Email
-                      </label>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">Email</label>
                       <input
                         type="email"
                         name="email"
                         value={formData.email}
                         onChange={handleInputChange}
-                        className="w-full p-3 sm:p-4 border-2 border-[#5F8B4C]/30 rounded-xl focus:outline-none focus:border-[#D98324] transition-colors bg-[#FFDDAB]/20 text-sm sm:text-base"
-                        placeholder="your.email@domain.com"
-                        style={{ fontFamily: 'Courier, monospace', fontSize: '16px' }}
                         required
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
                       />
                     </div>
-
-                    <div>
-                      <label
-                        className="block text-sm font-bold mb-2 text-[#131010]"
-                        style={{ fontFamily: 'Courier, monospace' }}
-                      >
-                        Project Details
-                      </label>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">Message</label>
                       <textarea
                         name="message"
                         value={formData.message}
                         onChange={handleInputChange}
-                        rows={5}
-                        className="w-full p-3 sm:p-4 border-2 border-[#5F8B4C]/30 rounded-xl focus:outline-none focus:border-[#D98324] transition-colors resize-none bg-[#FFDDAB]/20 text-sm sm:text-base"
-                        placeholder="Tell me about your project vision..."
-                        style={{ fontFamily: 'Courier, monospace', fontSize: '16px' }}
                         required
+                        rows={4}
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] resize-none"
                       />
                     </div>
-
-                  <motion.button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] text-white py-3 sm:py-4 rounded-xl font-bold flex items-center justify-center gap-3 text-base sm:text-lg transition-opacity ${
-                  isLoading ? 'opacity-70 cursor-not-allowed' : ''
-                }`}
-                style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}
-                whileHover={{ scale: isLoading ? 1 : 1.02 }}
-                whileTap={{ scale: isLoading ? 1 : 0.98 }}
-              >
-                {isLoading ? (
-                  <>
-                    <svg
-                      className="animate-spin h-5 w-5 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-full flex items-center justify-center gap-2 bg-[#5F8B4C] text-white py-3.5 rounded-xl border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] hover:shadow-[4px_4px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none font-bold transition-all disabled:opacity-50"
                     >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                      ></path>
-                    </svg>
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 sm:w-5 sm:h-5" />
-                    Send Message
-                  </>
-                )}
-              </motion.button>
-
+                      {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-5 h-5" /> Send Message</>}
+                    </button>
                   </form>
-                </motion.div>
+                </>
               ) : (
-                <motion.div
-                  className="bg-white rounded-2xl p-6 sm:p-8 text-center text-[#131010]"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <h3
-                    className="text-2xl sm:text-3xl font-bold text-[#5F8B4C] font-['Poppins']"
-                  >
-                    Thank you!
-                  </h3>
-                  <p className="mt-2 text-base font-['Courier']">
-                    Your message has been sent successfully. I’ll get back to you soon. 🙌
-                  </p>
-                </motion.div>
+                <div className="h-full flex flex-col items-center justify-center text-center py-12">
+                  <div className="w-16 h-16 bg-white border-4 border-[#131010] shadow-[4px_4px_0px_0px_#131010] rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle className="w-8 h-8 text-[#5F8B4C]" strokeWidth={3} />
+                  </div>
+                  <h3 className="text-2xl font-black text-[#131010] mb-2">Message Sent!</h3>
+                  <p className="font-bold text-[#131010]/70 font-courier">I'll get back to you soon.</p>
+                </div>
               )}
-
+            </div>
             
-            {/* Professional Info & Social Links */}
-            <motion.div
-              className="space-y-6 sm:space-y-8"
-              variants={cardVariants}
-            >
-              <div className="bg-gradient-to-br from-[#5F8B4C]/20 to-[#4A7A3C]/20 rounded-2xl p-6 sm:p-8 border border-[#5F8B4C]/30">
-                <h3 className="text-xl sm:text-2xl font-bold text-[#D98324] mb-4 sm:mb-6" 
-                    style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                  Professional Focus
-                </h3>
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-[#D98324] rounded-full"></div>
-                    <span className="text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>Full Stack Web Development</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-[#5F8B4C] rounded-full"></div>
-                    <span className="text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>Interactive Game Development</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-[#D98324] rounded-full"></div>
-                    <span className="text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>Real-time Applications</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-[#5F8B4C] rounded-full"></div>
-                    <span className="text-sm sm:text-base" style={{ fontFamily: 'Courier, monospace' }}>UI/UX Design Systems</span>
-                  </div>
+            {/* Links & Info */}
+            <div className="flex flex-col justify-between space-y-8">
+              <div className="bg-white rounded-3xl p-8 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]">
+                <h3 className="text-xl font-black text-[#131010] mb-6">Connect & Follow</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { icon: Github, label: "GitHub", href: "https://github.com/subhash-22-codes", color: "bg-[#131010] text-white" },
+                    { icon: Linkedin, label: "LinkedIn", href: "https://www.linkedin.com/in/subhash-yaganti-a8b3b626a/", color: "bg-[#0A66C2] text-white" },
+                    { icon: Twitter, label: "Twitter / X", href: "https://x.com/SYaganti44806", color: "bg-[#1DA1F2] text-white" },
+                    { icon: Mail, label: "Email Me", href: "mailto:suryayaganti2003@gmail.com", color: "bg-[#D98324] text-[#131010]" }
+                  ].map((link, i) => (
+                    <a key={i} href={link.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl border-2 border-[#131010] hover:-translate-y-1 hover:shadow-[3px_3px_0px_0px_#131010] transition-all bg-white group">
+                      <div className={`p-2 rounded-lg border-2 border-[#131010] ${link.color}`}>
+                        <link.icon size={18} strokeWidth={2.5} />
+                      </div>
+                      <span className="font-bold text-sm text-[#131010]">{link.label}</span>
+                    </a>
+                  ))}
                 </div>
               </div>
-              
-              <div className="space-y-3 sm:space-y-4">
-                <h3 className="text-xl sm:text-2xl font-bold text-[#D98324]" 
-                    style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>
-                  Connect
-                </h3>
-                
-                <div className="space-y-2 sm:space-y-3">
-                  <motion.a
-                    href="https://github.com/subhash-22-codes"
-                    className="flex items-center gap-3 sm:gap-4 text-gray-300 hover:text-white transition-colors group p-3 sm:p-4 bg-[#222] rounded-xl"
-                    whileHover={{ x: 8, backgroundColor: "#333" }}
-                  >
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-xl flex items-center justify-center group-hover:from-[#D98324] group-hover:to-[#B8741E] transition-all">
-                      <Github className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>GitHub</p>
-                      <p className="text-xs sm:text-sm opacity-70" style={{ fontFamily: 'Courier, monospace' }}>View projects & code</p>
-                    </div>
-                  </motion.a>
-                  
-                  <motion.a
-                    href="https://www.linkedin.com/in/subhash-yaganti-a8b3b626a/"
-                    className="flex items-center gap-3 sm:gap-4 text-gray-300 hover:text-white transition-colors group p-3 sm:p-4 bg-[#222] rounded-xl"
-                    whileHover={{ x: 8, backgroundColor: "#333" }}
-                  >
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-xl flex items-center justify-center group-hover:from-[#D98324] group-hover:to-[#B8741E] transition-all">
-                      <Linkedin className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>LinkedIn</p>
-                      <p className="text-xs sm:text-sm opacity-70" style={{ fontFamily: 'Courier, monospace' }}>Professional network</p>
-                    </div>
-                  </motion.a>
-                  
-                  <motion.a
-                    href="mailto:suryayaganti2003@gmail.com"
-                    className="flex items-center gap-3 sm:gap-4 text-gray-300 hover:text-white transition-colors group p-3 sm:p-4 bg-[#222] rounded-xl"
-                    whileHover={{ x: 8, backgroundColor: "#333" }}
-                  >
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#5F8B4C] to-[#4A7A3C] rounded-xl flex items-center justify-center group-hover:from-[#D98324] group-hover:to-[#B8741E] transition-all">
-                      <Mail className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm sm:text-base" style={{ fontFamily: 'Poppins, system-ui, sans-serif' }}>Email</p>
-                      <p className="text-xs sm:text-sm opacity-70" style={{ fontFamily: 'Courier, monospace' }}>Direct contact</p>
-                    </div>
-                  </motion.a>
-                </div>
+
+              <div className="text-center md:text-left mt-auto">
+                <p className="text-[#131010] font-black text-2xl tracking-tight mb-1">MemeGame.</p>
+                <p className="text-[#131010]/60 font-bold font-courier text-xs uppercase tracking-widest">© 2025. Built for laughs.</p>
               </div>
-            </motion.div>
+            </div>
+
           </div>
-          
-          <motion.div
-            className="text-center mt-12 sm:mt-16 pt-6 sm:pt-8 border-t border-gray-700"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ delay: 0.5, duration: 0.6 }}
-          >
-            <p className="text-gray-400 text-sm sm:text-base" style={{ fontFamily: 'Monaco, monospace' }}>
-              © 2025 MemeGame. Crafted with passion and precision.
-            </p>
-          </motion.div>
         </div>
       </motion.footer>
+
     </div>
   );
 };
