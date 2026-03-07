@@ -13,6 +13,7 @@ import {
   Loader2,
   KeyRound
 } from 'lucide-react';
+import { API_URL } from '../config';  
 
 interface Toast {
   id: number;
@@ -91,7 +92,7 @@ const ForgetPasswordPage: React.FC = () => {
     setLoading(true);
     
     try {
-      const response = await fetch('/api/send-otp', {
+      const response = await fetch(`${API_URL}/send-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +150,7 @@ const ForgetPasswordPage: React.FC = () => {
     setLoading(true);
     
     try {
-      const res = await fetch('/api/verify-otp', {
+      const res = await fetch(`${API_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp, purpose: 'reset', password: newPassword }),
@@ -178,7 +179,7 @@ const ForgetPasswordPage: React.FC = () => {
     
     setLoading(true);
     try {
-      const response = await fetch('/api/send-otp', {
+      const response = await fetch(`${API_URL}/send-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
