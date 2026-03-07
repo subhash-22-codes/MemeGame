@@ -130,7 +130,7 @@ const Input: React.FC<InputProps> = ({
           placeholder={placeholder}
           className={`
             w-full px-4 py-3.5 ${icon ? 'pl-12' : ''} 
-            bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold
+            bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-semibold
             border-2 rounded-xl transition-shadow duration-200
             focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
             placeholder:text-[#131010]/30 placeholder:font-medium
@@ -481,7 +481,7 @@ const LandingPage: React.FC = () => {
                             placeholder="••••••••"
                             className={`
                               w-full px-4 py-3.5 pl-12 pr-12
-                              bg-[#FFDDAB]/10 text-[#131010] text-sm font-poppins font-semibold
+                              bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-semibold
                               border-2 rounded-xl transition-shadow duration-200
                               focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
                               placeholder:text-[#131010]/30 placeholder:font-medium
