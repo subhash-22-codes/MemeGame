@@ -25,6 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import gaybroImg from '../images/gaybro.jpg';
 import gaybriImg2 from '../images/gaybro2.jpg';
 import toast from 'react-hot-toast';
+import axios from "axios";
 
 // --- Tactile Button Component ---
 interface ButtonProps {
@@ -202,38 +203,47 @@ const LandingPage: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError('');
 
-    if (!awaitingOtp && !validateForm()) return;
+  if (!awaitingOtp && !validateForm()) return;
 
-    try {
-      if (awaitingOtp) {
-        await verifyOtp({ email, otp, purpose: 'register', username, password });
-        toast.success('Authenticated successfully!');
-        navigate('/dashboard');
-        return;
-      }
-
-      if (showLogin) {
-        await login(email, password);
-        toast.success('Login successful!');
-        navigate('/dashboard');
-      } else {
-        await register(username, email, password);
-        setAwaitingOtp(true);
-        toast.success('Signup OTP sent to your email');
-      }
-    } catch (err) {
-      console.error('Authentication error:', err);
-      toast.error(() => (
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-[#131010] font-medium">Authentication failed. Try again.</span>
-        </div>
-      ));
+  try {
+    if (awaitingOtp) {
+      await verifyOtp({ email, otp, purpose: 'register', username, password });
+      toast.success('Account created successfully. Welcome to MemeGame!');
+      navigate('/dashboard');
+      return;
     }
-  };
+
+    if (showLogin) {
+      await login(email, password);
+      toast.success('Welcome back to MemeGame!');
+      navigate('/dashboard');
+    } else {
+      await register(username, email, password);
+      setAwaitingOtp(true);
+      toast.success('Signup OTP sent to your email');
+    }
+
+    } catch (err: unknown) {
+      console.error("Authentication error:", err);
+
+      let message = "Something went wrong. Please try again.";
+
+      if (axios.isAxiosError(err)) {
+        message =
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+
+      toast.error(message);
+    }
+};
   
   return (
     <>
@@ -281,7 +291,7 @@ const LandingPage: React.FC = () => {
                     }}
                     icon={isAuthenticated ? <Laugh strokeWidth={3} /> : <BookOpen strokeWidth={3} />}
                   >
-                    {isAuthenticated ? 'Enter Dashboard' : 'How to Play'}
+                    {isAuthenticated ? 'Play Now' : 'How to Play'}
                   </Button>
 
                   {!isAuthenticated && (
