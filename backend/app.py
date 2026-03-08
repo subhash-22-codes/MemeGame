@@ -20,7 +20,7 @@ import re
 from bson.json_util import dumps, loads
 import requests
 from services.email_service import get_thank_you_email
-from services.email_service import send_registration_otp_email, send_professional_otp_email, send_email
+from services.email_service import send_registration_otp_email, send_professional_otp_email, send_email, send_contact_thankyou_email
 from utils.auth_utils import validate_email_format
 from utils.game_utils import generate_unique_room_id
 from utils.session_utils import generate_session_id
@@ -36,7 +36,7 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
 
-#client = MongoClient("mongodb://127.0.0.1:27017/")
+# client = MongoClient("mongodb://127.0.0.1:27017/")
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 client = MongoClient(
@@ -352,7 +352,7 @@ def handle_contact():
         subject = f"🙌 Thanks for Contacting MemeGame! {date_str}"
         html_content = get_thank_you_email(name, message)
 
-        send_email(email, subject, html_content)
+        send_contact_thankyou_email(email, subject, html_content)
         return jsonify({ "success": True, "message": "Message sent successfully!" }), 200
 
     except Exception as e:
@@ -487,7 +487,7 @@ def verify_otp():
         token = jwt.encode({
             "email": email,
             "id": user_id,
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.utcnow() + timedelta(days=30)
         }, JWT_SECRET_KEY, algorithm="HS256")
 
         payload_user = {
@@ -499,13 +499,14 @@ def verify_otp():
 
         if purpose == "register":
             try:
+                logger.info(f"Sending welcome email to {email}")
                 now = datetime.now()
                 formatted_time = now.strftime("%b %d, %Y %I:%M %p")
                 subject = f"Welcome to MemeGame 🎉  |  {formatted_time}"
                 body = f"Welcome {user.get('username','player')} to MemeGame!"
                 send_email(email, subject, body)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Welcome email failed for {email}: {e}")
 
         return jsonify({"token": token, "user": payload_user}), 200
 
@@ -644,7 +645,7 @@ def login():
         token = jwt.encode({
             "email": email,
             "id": str(user["_id"]),
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.utcnow() + timedelta(days=30)
         }, JWT_SECRET_KEY, algorithm="HS256")
 
         return jsonify({
