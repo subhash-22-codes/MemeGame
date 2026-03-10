@@ -53,6 +53,7 @@ otp_collection.create_index("expires_at", expireAfterSeconds=0)
 contact_collection = db["contact_messages"]
 sessions_collection = db["sessions"]
 game_results_collection = db["game_results"]
+feedback_collection = db["feedback"]
 
 # Redis connection (for sessions, timers, rate-limits)
 REDIS_URL = os.getenv("REDIS_URL")
@@ -549,6 +550,43 @@ def register():
         return jsonify({"error": "Failed to send OTP"}), 500
     logger.info(f"[REGISTER] Registration OTP sent to {email}")
     return jsonify({"message": "OTP sent to email for registration"}), 200
+
+@app.route("/api/feedback", methods=["POST"])
+def submit_feedback():
+    try:
+        data = request.get_json() or {}
+
+        rating = int(data.get("rating", 0))
+        message = str(data.get("message", "")).strip()
+        room_id = data.get("roomId")
+        user_id = data.get("userId")
+        username = data.get("username")
+
+        if rating < 1 or rating > 5:
+            return jsonify({"success": False, "error": "Invalid rating"}), 400
+
+        feedback_doc = {
+            "rating": rating,
+            "message": message,
+            "roomId": room_id,
+            "userId": user_id,
+            "username": username,
+            "createdAt": datetime.utcnow()
+        }
+
+        feedback_collection.insert_one(feedback_doc)
+
+        return jsonify({
+            "success": True,
+            "message": "Feedback received"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[FEEDBACK ERROR] {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": "Server error"
+        }), 500
 
     
 @app.route('/api/user/dashboard-stats', methods=['GET'])
