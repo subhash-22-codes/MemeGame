@@ -16,6 +16,7 @@ import Results from '../components/GamePhases/Results';
 import FinalLeaderboard from '../components/GamePhases/FinalLeaderboard';
 import Timer from '../components/UI/Timer';
 import PlayerStatus from '../components/UI/PlayerStatus';
+import FeedbackModal from '../components/UI/FeedbackModal';
 
 const Game: React.FC = () => {
   // --- WIRING INTACT ---
@@ -41,6 +42,7 @@ const Game: React.FC = () => {
   const [previousJudgeId, setPreviousJudgeId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPlayerStatusOpen, setIsPlayerStatusOpen] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   
   useEffect(() => {
     if (!isRestoring && (!gameState || !user)) {
@@ -104,6 +106,31 @@ const Game: React.FC = () => {
     if (gamePhase !== 'results' || !gameState) return undefined;
     return [...gameState.players].sort((a, b) => b.score - a.score)[0];
   }, [gamePhase, gameState]);
+
+  useEffect(() => {
+  if (!gameState) return;
+
+  if (gamePhase === "finalResults") {
+    const played =
+      Number(localStorage.getItem("memegame_games_played") || 0) + 1;
+
+    localStorage.setItem("memegame_games_played", played.toString());
+
+    const feedbackState = localStorage.getItem("memegame_feedback_state");
+
+    const nextTrigger = Number(
+      localStorage.getItem("memegame_feedback_next_trigger") || 1
+    );
+
+    if (
+      played >= nextTrigger &&
+      feedbackState !== "submitted" &&
+      feedbackState !== "declined"
+    ) {
+      setShowFeedback(true);
+    }
+  }
+}, [gamePhase, gameState]);
 
   const hasUserSubmitted = gameState?.submissions?.some(sub => sub.playerId === user?.id) || false;
   
@@ -472,7 +499,12 @@ const Game: React.FC = () => {
         }
         .animate-fade-in-up { animation: fade-in-up 0.3s ease-out forwards; }
       `}</style>
+
+      {showFeedback && (
+        <FeedbackModal onClose={() => setShowFeedback(false)} />
+      )}
     </div>
+    
   );
 };
 
