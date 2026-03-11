@@ -8,70 +8,110 @@ const Chat: React.FC = () => {
   const [message, setMessage] = useState('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
     }
   }, [chatMessages]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (message.trim()) {
-      sendChatMessage(message);
-      setMessage('');
-    }
+    if (!message.trim()) return;
+
+    sendChatMessage(message.trim());
+    setMessage('');
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-800 rounded-lg p-4">
-      <h2 className="text-xl font-bold mb-4 text-white">Chat</h2>
-      
-      <div 
+    <div className="flex flex-col h-full bg-white border-2 border-[#131010] rounded-xl shadow-[4px_4px_0px_0px_#131010] overflow-hidden">
+
+      {/* Header */}
+      <div className="px-4 py-3 border-b-2 border-[#131010] bg-[#FFDDAB] font-black text-[#131010] text-sm">
+        Game Chat
+      </div>
+
+      {/* Messages */}
+      <div
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto mb-4 space-y-3"
+        className="flex-1 overflow-y-auto p-3 space-y-3 bg-white"
       >
         {chatMessages.length === 0 ? (
-          <p className="text-slate-400 text-center italic">No messages yet. Be the first to say something!</p>
+          <p className="text-[#131010]/50 text-center text-sm italic">
+            No messages yet
+          </p>
         ) : (
           chatMessages.map((msg) => (
             <ChatMessageItem key={msg.id} message={msg} />
           ))
         )}
       </div>
-      
-      <form onSubmit={handleSendMessage} className="flex items-center mt-auto">
+      {/* Input */}
+      <form
+        onSubmit={handleSendMessage}
+        className="flex border-t-2 border-[#131010]"
+      >
         <input
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          className="flex-1 bg-slate-700 text-white rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
           placeholder="Type a message..."
+          className="flex-1 px-3 py-2 text-sm font-medium text-[#131010] outline-none"
+          maxLength={200}
         />
+
         <button
           type="submit"
-          className="bg-purple-600 text-white p-2 rounded-r-lg hover:bg-purple-700 transition-colors"
+          className="px-3 bg-[#5F8B4C] text-white border-l-2 border-[#131010] hover:bg-[#4c713d]"
         >
-          <Send size={20} />
+          <Send size={18} />
         </button>
       </form>
     </div>
   );
 };
 
-// This is the NEW, FIXED code
-const ChatMessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
-  return (
-    <div className="animate-fade-in">
-      <div className="flex items-start">
-        {/* ⭐️ THIS IS THE FIX ⭐️ */}
-        <div className="font-semibold text-pink-400">{message.username}</div>
+const getUserColor = (username: string) => {
+  const colors = [
+    '#D98324', // orange
+    '#5F8B4C', // green
+    '#2563EB', // blue
+    '#9333EA', // purple
+    '#DB2777', // pink
+    '#DC2626', // red
+    '#0891B2', // cyan
+    '#CA8A04'  // yellow/gold
+  ];
 
-        <div className="ml-2 text-xs text-slate-400">
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return colors[Math.abs(hash) % colors.length];
+};
+
+const ChatMessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
+  const color = getUserColor(message.username);
+
+  return (
+    <div className="animate-fade-in text-sm">
+      <div className="flex items-center gap-2">
+        <span
+          className="font-bold"
+          style={{ color }}
+        >
+          {message.username}
+        </span>
+
+        <span className="text-xs text-[#131010]/50">
           {format(new Date(message.timestamp), 'HH:mm')}
-        </div>
+        </span>
       </div>
-      <div className="text-white mt-1">{message.message}</div>
+
+      <div className="text-[#131010] mt-0.5 break-words">
+        {message.message}
+      </div>
     </div>
   );
 };

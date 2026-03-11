@@ -358,9 +358,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
     newSocket.on('playerLeft', (data: { players: Player[]; leftPlayerId: string }) => {
       console.log('[SOCKET] playerLeft');
+
       dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
+
+      toast(`${data.leftPlayerId} left the room`);
     });
-    
+        
     newSocket.on('playerDisconnected', (data: { players: Player[]; disconnectedPlayerId: string }) => {
       console.log('[SOCKET] playerDisconnected');
       dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
@@ -468,14 +471,19 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const leaveRoom = () => {
     if (state.gameState?.roomId && user) {
       safeEmit('leaveRoom', { roomId: state.gameState.roomId });
-      dispatch({ type: 'RESET_GAME' });
+
       clearGameSession();
+
+      dispatch({ type: 'RESET_GAME' });
     }
   };
 
   const discardRoom = () => {
     if (state.gameState?.roomId) {
       safeEmit('discardRoom', { roomId: state.gameState.roomId });
+
+      clearGameSession();
+      dispatch({ type: 'RESET_GAME' });
     }
   };
 

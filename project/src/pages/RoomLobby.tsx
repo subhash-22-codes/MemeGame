@@ -16,7 +16,6 @@ import {
   Play, 
   Trash2, 
   LogOut, 
-  AlertTriangle,
   Wifi,
   WifiOff,
   RefreshCw,
@@ -67,9 +66,6 @@ const Modal: React.FC<ModalProps> = ({
           className="bg-white rounded-xl max-w-md w-full p-6 sm:p-8 border-2 border-[#131010] shadow-[8px_8px_0px_0px_#131010]"
         >
           <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-[#FFDDAB] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-8 h-8 text-[#D98324]" strokeWidth={2.5} />
-            </div>
             <h3 className="font-poppins text-2xl font-black mb-2 text-[#131010]">{title}</h3>
             <p className="font-poppins font-medium text-sm text-[#131010]/70">{message}</p>
           </div>
@@ -93,6 +89,27 @@ const Modal: React.FC<ModalProps> = ({
   );
 };
 
+const PLAYER_CHAT_COLORS = [
+  "bg-[#E3F2FD]", // blue
+  "bg-[#E8F5E9]", // green
+  "bg-[#F3E5F5]", // purple
+  "bg-[#FFF3E0]", // orange
+  "bg-[#FCE4EC]", // pink
+  "bg-[#E0F7FA]", // cyan
+  "bg-[#F9FBE7]", // lime
+  "bg-[#ECEFF1]"  // gray
+];
+
+function getPlayerColor(id: string) {
+  let hash = 0;
+
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  const index = Math.abs(hash) % PLAYER_CHAT_COLORS.length;
+  return PLAYER_CHAT_COLORS[index];
+}
 // --- Main RoomLobby ---
 const RoomLobby: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -190,16 +207,21 @@ const RoomLobby: React.FC = () => {
       navigate('/login');
       return;
     }
-    if (roomId && user && connectionState === 'connected' && !gameState && !joinAttempted) {
+    if (roomId && user && connectionState === 'connected' && !gameState && !joinAttempted && !showDiscardModal) {
       setJoinAttempted(true);
       console.log('[ROOM_LOBBY] Attempting initial join for room:', roomId);
       joinRoom(roomId).catch((error) => {
         console.error('Failed to join room:', error);
+
+        if (error?.message?.toLowerCase().includes("room")) {
+          navigate('/dashboard');
+          return;
+        }
         toast.error(`Failed to join room: ${error.message}`);
         navigate('/join');
       });
     }
-  }, [roomId, user, connectionState, gameState, joinRoom, navigate, joinAttempted]);
+  }, [roomId, user, connectionState, gameState, joinRoom, navigate, joinAttempted, showDiscardModal]);
   
   // Phase Watcher
   useEffect(() => {
@@ -314,7 +336,7 @@ const RoomLobby: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 auto-rows-max">
-              {players.map((player, index) => {
+              {players.filter(p => p.isConnected !== false).map((player, index) => {
                 const isRoomHost = player.id === hostId;
                 const isCurrentUser = player.id === user?.id;
                 
@@ -382,7 +404,7 @@ const RoomLobby: React.FC = () => {
           </div>
 
           {/* RIGHT: Live Chat (5 Cols) */}
-          <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-[400px] lg:h-auto lg:min-h-[500px]">
+          <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-[400px] lg:h-[500px]">
             <div className="bg-white rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] overflow-hidden flex flex-col h-full">
               
               {/* Chat Header */}
@@ -394,7 +416,7 @@ const RoomLobby: React.FC = () => {
               </div>
               
               {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FFDDAB]/10 custom-scroll">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FFDDAB]/10 custom-scroll scroll-smooth">
                 {chatMessages.length === 0 && (
                   <div className="h-full flex items-center justify-center text-center">
                     <p className="font-poppins text-[#131010]/40 text-sm font-medium">Say what's up to the lobby. Keep it somewhat clean.</p>
@@ -403,6 +425,8 @@ const RoomLobby: React.FC = () => {
                 {/* Typed msg to remove ESLint 'any' error */}
                 {chatMessages.map((msg: { id: string; userId?: string; playerId?: string; username: string; message: string }) => {
                   const isMe = msg.userId === user?.id || msg.playerId === user?.id;
+                  const playerId = msg.userId || msg.playerId || msg.username;
+                  const playerColor = getPlayerColor(playerId);
                   
                   return (
                     <motion.div 
@@ -414,12 +438,12 @@ const RoomLobby: React.FC = () => {
                       <span className="text-[10px] font-bold font-courier text-[#131010]/40 px-1 mb-1 uppercase tracking-wider">
                         {isMe ? 'You' : msg.username}
                       </span>
-                      <div 
-                        className={`px-3 py-2 rounded-xl max-w-[85%] text-sm font-poppins font-medium border-2 shadow-[2px_2px_0px_0px_#131010] ${
-                          isMe 
-                            ? 'bg-[#FFDDAB] text-[#131010] border-[#131010] rounded-tr-none' 
-                            : 'bg-white text-[#131010] border-[#131010] rounded-tl-none'
-                        }`}
+                     <div 
+                     className={`px-3 py-2 rounded-xl max-w-[85%] text-sm font-poppins font-medium border-2 shadow-[2px_2px_0px_0px_#131010] ${
+                        isMe 
+                          ? 'bg-[#FFDDAB] text-[#131010] border-[#131010] rounded-tr-none' 
+                          : `${playerColor} text-[#131010] border-[#131010] rounded-tl-none`
+                      }`}
                       >
                         {msg.message}
                       </div>
@@ -503,7 +527,6 @@ const RoomLobby: React.FC = () => {
               </button>
               
               <div className="flex items-center gap-3 bg-white border-2 border-[#131010] px-6 py-3 rounded-lg shadow-[3px_3px_0px_0px_#131010]">
-                <div className="w-3 h-3 bg-[#D98324] rounded-full animate-pulse" />
                 <span className="font-poppins font-bold text-sm text-[#131010]">Waiting for host to start...</span>
               </div>
             </div>
@@ -519,6 +542,7 @@ const RoomLobby: React.FC = () => {
         onConfirm={() => {
           discardRoom();
           setShowDiscardModal(false);
+           navigate('/dashboard', { replace: true });
         }}
         title="Discard Room"
         message="Are you sure you want to discard this room? All players will be kicked."
@@ -532,6 +556,7 @@ const RoomLobby: React.FC = () => {
         onConfirm={() => {
           leaveRoom();
           setShowLeaveModal(false);
+          navigate('/dashboard');
         }}
         title="Leave Room"
         message="Are you sure you want to leave this room?"

@@ -190,7 +190,7 @@ const Dashboard: React.FC = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
-        className="max-w-5xl mx-auto space-y-5 sm:space-y-6"
+        className="max-w-6xl mx-auto space-y-5 sm:space-y-6"
       >
         {/* 1. Header Section */}
         <div className="bg-white rounded-xl p-5 sm:p-6 border border-[#131010] shadow-[4px_4px_0px_0px_#131010]">

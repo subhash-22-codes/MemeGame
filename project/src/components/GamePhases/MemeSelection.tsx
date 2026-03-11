@@ -55,12 +55,11 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
     <div className="max-w-4xl mx-auto w-full animate-fade-in">
       
       {/* 1. The Sentence Prompt (Bento Card) */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] mb-6 sm:mb-8 text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-[#5F8B4C]"></div>
+      <div className="sticky top-0 z-30 bg-white rounded-2xl p-4 sm:p-6 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] mb-6 sm:mb-8 text-center relative">
         <div className="inline-flex items-center gap-1.5 bg-[#FFDDAB] px-3 py-1 rounded-md border border-[#131010] font-black text-[10px] text-[#131010] uppercase tracking-widest mb-3">
           <MessageSquare className="w-3 h-3" strokeWidth={3} /> The Prompt
         </div>
-        <p className="text-lg sm:text-xl md:text-2xl font-black text-[#131010] font-poppins leading-tight px-2">
+        <p className="text-base sm:text-xl md:text-2xl font-black text-[#131010] font-poppins leading-tight px-2">
           "{sentence}"
         </p>
       </div>
