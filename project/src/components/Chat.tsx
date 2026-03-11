@@ -56,7 +56,7 @@ const Chat: React.FC = () => {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Type a message..."
-          className="flex-1 px-3 py-2 text-sm font-medium text-[#131010] outline-none"
+          className="flex-1 px-3 py-2 text-base sm:text-sm font-medium text-[#131010] outline-none"
           maxLength={200}
         />
 

@@ -464,7 +464,7 @@ const RoomLobby: React.FC = () => {
                     onKeyPress={handleKeyPress}
                     placeholder="Type a message..."
                     disabled={!isConnected}
-                    className="flex-1 px-3 py-2 bg-[#FFDDAB]/20 border-2 border-[#131010] text-[#131010] rounded-lg focus:outline-none focus:bg-white font-poppins text-sm font-medium transition-colors disabled:opacity-50"
+                    className="flex-1 px-3 py-2 bg-[#FFDDAB]/20 border-2 border-[#131010] text-[#131010] rounded-lg focus:outline-none focus:bg-white font-poppins text-base sm:text-sm font-medium transition-colors disabled:opacity-50"
                     maxLength={200}
                   />
                   <button

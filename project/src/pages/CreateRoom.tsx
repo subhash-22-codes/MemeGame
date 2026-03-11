@@ -256,7 +256,7 @@ const CreateRoom: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleInputChange('isPublic', true)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-poppins font-bold transition-all ${
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-base sm:text-sm font-poppins font-bold transition-all ${
                       formData.isPublic 
                         ? 'bg-white border border-[#131010] shadow-[2px_2px_0px_0px_#131010] text-[#131010]' 
                         : 'text-[#131010]/50 hover:text-[#131010]'

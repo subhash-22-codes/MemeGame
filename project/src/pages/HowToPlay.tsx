@@ -546,7 +546,7 @@ const HowToPlay: React.FC = () => {
                         value={formData.name}
                         onChange={handleInputChange}
                         required
-                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-base sm:text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -557,7 +557,7 @@ const HowToPlay: React.FC = () => {
                         value={formData.email}
                         onChange={handleInputChange}
                         required
-                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-base sm:text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010]"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -568,7 +568,7 @@ const HowToPlay: React.FC = () => {
                         onChange={handleInputChange}
                         required
                         rows={4}
-                        className="w-full px-4 py-3 bg-white text-[#131010] text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] resize-none"
+                        className="w-full px-4 py-3 bg-white text-[#131010] text-base sm:text-sm font-poppins font-semibold border-2 border-[#131010] rounded-xl transition-shadow focus:outline-none focus:shadow-[2px_2px_0px_0px_#131010] resize-none"
                       />
                     </div>
                     <button
