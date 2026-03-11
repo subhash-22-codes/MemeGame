@@ -14,7 +14,7 @@ import random
 from bson import ObjectId
 from flask_socketio import disconnect
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 import logging
 import re
 from bson.json_util import dumps, loads
@@ -200,14 +200,14 @@ def get_socket_mapping(sid: str) -> dict:
         logger.error(f"get_socket_mapping error: {e}")
     return local_socket_store.get(f"sock:{sid}", {})
 
-def set_rejoin_grace(session_id: str, ttl_seconds: int = 15) -> None:
+def set_rejoin_grace(session_id: str, ttl_seconds: int = 45) -> None:
     try:
         if redis_client:
             redis_client.setex(f"rejoin_grace:{session_id}", ttl_seconds, "1")
             return
     except Exception as e:
         logger.error(f"set_rejoin_grace error: {e}")
-    local_rejoin_store[session_id] = True
+    local_rejoin_store[session_id] = time.time() + ttl_seconds
 
 def pop_rejoin_grace(session_id: str) -> bool:
     try:
@@ -811,7 +811,8 @@ def handle_disconnect():
 
         rooms_collection.update_one(
             {"roomId": room_id, "players.id": player_id},
-            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
+            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}},
+            upsert=False
         )
         logger.info(f"[DISCONNECT] Updated DB for player {player_id}")
 
@@ -865,7 +866,7 @@ def handle_disconnect():
                 }, to=room_id)
 
         # 8. FINAL CLEANUP
-        set_rejoin_grace(session_id, 15)
+        set_rejoin_grace(session_id, 45)
         clear_socket_mapping(sid)
 
     except Exception as e:
@@ -1138,7 +1139,8 @@ def get_memes_from_giphy():
             "api_key": GIPHY_API_KEY,
             "q": "reaction",
             "limit": 50,
-            "rating": "pg-13",
+            "offset": random.randint(0, 200),
+            "rating": "r",
             "lang": "en"
         }
 
@@ -1161,7 +1163,7 @@ def get_memes_from_giphy():
             try:
                 formatted_memes.append({
                     "id": meme_data["id"],
-                    "url": meme_data["images"]["fixed_height"]["url"],
+                    "url": meme_data["images"]["fixed_height_small"]["url"],
                     "title": meme_data.get("title") or "Meme"
                 })
             except Exception:
@@ -1173,7 +1175,7 @@ def get_memes_from_giphy():
 
         return random.sample(
             formatted_memes,
-            min(len(formatted_memes), 18)
+            min(len(formatted_memes), 45)
         )
 
     except Exception as e:
@@ -1218,7 +1220,7 @@ def handle_submit_sentence(data):
             }
         }
 
-        start_game_timer(room_id, 45)
+        start_game_timer(room_id, 90)
         broadcast_state(room_id, sentence_update, "memeSelection")
 
     except Exception as e:
@@ -1478,10 +1480,9 @@ def handle_leave_room(data):
         logger.info(f"[LEAVE] Player {player['id']} is leaving room {room_id}")
 
         rooms_collection.update_one(
-            {"roomId": room_id, "players.id": player['id']},
-            {"$set": {"players.$.isConnected": False, "players.$.lastSeen": datetime.utcnow()}}
+            {"roomId": room_id},
+            {"$pull": {"players": {"id": player['id']}}}
         )
-        
         sessions_collection.delete_many({"roomId": room_id, "playerId": player['id']})
         delete_player_sessions(room_id, player['id'])
         clear_socket_mapping(sid)
@@ -1496,7 +1497,7 @@ def handle_leave_room(data):
 
         emit('playerLeft', {
             "players": json_safe(updated_room.get("players", [])),
-            "leftPlayerId": player['id']
+            "leftPlayerId": player['username']
         }, to=room_id)
 
     except Exception as e:
@@ -1527,7 +1528,10 @@ def handle_discard_room(data):
         logger.info(f"[DISCARD] Host {player['id']} is discarding room {room_id}")
 
         emit('roomDiscarded', {"message": "The host has closed the room"}, to=room_id)
-        socketio.close_room(room_id) 
+
+        leave_room(room_id, sid)
+
+        socketio.close_room(room_id)
         
         rooms_collection.delete_one({"roomId": room_id})
         sessions_collection.delete_many({"roomId": room_id})
@@ -1541,7 +1545,7 @@ def handle_discard_room(data):
 
 
 
-def start_game_timer(room_id, duration=45):
+def start_game_timer(room_id, duration=90):
     """Start a synchronized timer for a room"""
     end_time = datetime.utcnow() + timedelta(seconds=duration)
     set_timer(room_id, end_time.isoformat(), duration)
