@@ -263,7 +263,7 @@ const Dashboard: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center gap-5 sm:gap-6 relative z-10">
             <div className="w-full md:w-3/5">
               <div className="inline-block px-3 py-1 rounded-md bg-white border border-[#131010] text-[#131010] font-poppins font-bold text-[10px] sm:text-xs mb-3 shadow-[1px_1px_0px_0px_#131010]">
-                Weekly Event
+                Weekly Event - Soon
               </div>
               <h2 className="font-poppins text-white text-xl sm:text-2xl font-bold mb-2 leading-tight">
                 The Weekend Meme Party
