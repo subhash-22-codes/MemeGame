@@ -48,7 +48,7 @@ const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
             placeholder="e.g., When the server crashes at 2 AM..."
             maxLength={150}
             disabled={isSubmitting}
-            className="w-full px-4 py-3 sm:py-3.5 text-[#131010] text-sm sm:text-base font-semibold font-poppins bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl transition-shadow duration-200 focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010] disabled:opacity-50 placeholder:text-[#131010]/40 pr-16"
+            className="w-full px-4 py-3 sm:py-3.5 text-[#131010] text-base sm:text-base font-semibold font-poppins bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl transition-shadow duration-200 focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010] disabled:opacity-50 placeholder:text-[#131010]/40 pr-16"
           />
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[10px] font-bold font-courier text-[#131010]/50 bg-white/80 px-2 py-1 rounded border border-[#131010]/10">
             {sentence.length}/150
