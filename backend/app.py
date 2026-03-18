@@ -17,6 +17,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime, time, timedelta
 import logging
 import re
+import time
 from bson.json_util import dumps, loads
 import requests
 from services.email_service import get_thank_you_email
@@ -36,7 +37,7 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
 
-# client = MongoClient("mongodb://127.0.0.1:27017/")
+#client = MongoClient("mongodb://127.0.0.1:27017/")
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 client = MongoClient(
@@ -947,6 +948,7 @@ def handle_create_room(data):
 
 @socketio.on('joinRoom')
 def handle_join_room(data):
+    start = time.time()
     sid = request.sid
     logger.debug(f"[DEBUG] 'joinRoom' event from {sid}: {data}")
     
@@ -1006,8 +1008,6 @@ def handle_join_room(data):
                     to=sid
                 )
                 return
-
-            logger.info(f"[JOIN] New player {player_id} joining room {room_id}")
             
             logger.info(f"[JOIN] New player {player_id} joining room {room_id}")
             session_id = provided_session_id or generate_session_id()
@@ -1064,6 +1064,9 @@ def handle_join_room(data):
             "roomData": json_safe(updated_room),
             "sessionId": session_id
         }, to=sid)
+        
+        end = time.time()
+        logger.info(f"[METRIC] joinRoom latency: {(end - start)*1000:.2f} ms")
 
     except Exception as e:
         logger.error(f"[ERROR] Error in joinRoom: {str(e)}")
@@ -1072,6 +1075,7 @@ def handle_join_room(data):
 @socketio.on('startGame')
 def handle_start_game(data):
     sid = request.sid
+    start = time.time()
     try:
         room_id = data.get("roomId")
         player, room, error = get_player_and_room(
@@ -1123,6 +1127,16 @@ def handle_start_game(data):
         }
         
         broadcast_state(room_id, initial_update, "sentenceCreation")
+        
+        end = time.time()  
+
+        logger.info({       
+            "type": "metric",
+            "event": "start_game",
+            "latency_ms": round((end - start) * 1000, 2),
+            "room": room_id,
+            "players": len(players)
+        })
 
     except Exception as e:
         logger.error(f"[ERROR] Error in startGame: {e}")
@@ -1186,6 +1200,7 @@ def get_memes_from_giphy():
 @socketio.on('submitSentence')
 def handle_submit_sentence(data):
     sid = request.sid
+    start = time.time()
     try:
         room_id = data.get("roomId")
         sentence = data.get("sentence")
@@ -1222,6 +1237,16 @@ def handle_submit_sentence(data):
 
         start_game_timer(room_id, 90)
         broadcast_state(room_id, sentence_update, "memeSelection")
+        
+        end = time.time()  
+
+        logger.info({     
+            "type": "metric",
+            "event": "submit_sentence",
+            "latency_ms": round((end - start) * 1000, 2),
+            "room": room_id,
+            "player": player.get("id")
+        })
 
     except Exception as e:
         logger.error(f"[ERROR] Error in submitSentence: {str(e)}")
@@ -1230,6 +1255,7 @@ def handle_submit_sentence(data):
 @socketio.on('selectMeme')
 def handle_select_meme(data):
     sid = request.sid
+    start = time.time()
     try:
         room_id = data.get("roomId")
         meme_id = data.get("memeId") 
@@ -1288,10 +1314,27 @@ def handle_select_meme(data):
 
         if all_submitted:
             logger.info(f"[GAME] All players submitted in {room_id}. Moving to reveal.")
+            logger.info({
+             "type": "metric",
+             "event": "all_submissions_complete",
+             "room": room_id,
+             "total_players": len(non_judge_players)
+            })
             stop_game_timer(room_id)
             broadcast_state(room_id, update_payload, "memeReveal")
         else:
             broadcast_state(room_id, update_payload, "memeSelection")
+        end = time.time()
+
+        logger.info({
+          "type": "metric",
+          "event": "select_meme",
+          "latency_ms": round((end - start) * 1000, 2),
+          "room": room_id,
+          "player": player.get("id"),
+          "total_submissions": len(new_submissions),
+          "expected_submissions": len(non_judge_players)
+        })
             
     except Exception as e:
         logger.error(f"[ERROR] Error in selectMeme: {str(e)}")
@@ -1301,6 +1344,7 @@ def handle_select_meme(data):
 @socketio.on('scoreMeme')
 def handle_score_meme(data):
     sid = request.sid
+    start = time.time()
     try:
         room_id = data.get("roomId")
         player_id_to_score = data.get("playerId")
@@ -1352,6 +1396,12 @@ def handle_score_meme(data):
         all_scored = all(s.get("score") is not None and s.get("score") != 0 for s in submissions)
         
         if all_scored:
+            logger.info({
+            "type": "metric",
+            "event": "all_scores_complete",
+            "room": room_id,
+            "round": current_round
+            })
             if current_round >= total_rounds:
                 logger.info(f"[GAME_OVER] Final round completed in {room_id}. Finalizing...")
                 
@@ -1363,6 +1413,16 @@ def handle_score_meme(data):
                 broadcast_state(room_id, {}, "results")
         else:
             broadcast_state(room_id, {}, "memeReveal")
+        end = time.time()
+
+        logger.info({
+         "type": "metric",
+         "event": "score_meme",
+         "latency_ms": round((end - start) * 1000, 2),
+         "room": room_id,
+         "judge": player.get("id"),
+         "scored_player": player_id_to_score
+        })
         
     except Exception as e:
         logger.error(f"[ERROR] Error in scoreMeme: {str(e)}")
@@ -1372,6 +1432,7 @@ def handle_score_meme(data):
 @socketio.on('nextRound')
 def handle_next_round(data):
     sid = request.sid
+    
     try:
         room_id = data.get("roomId")
         
@@ -1425,15 +1486,15 @@ def handle_next_round(data):
 @socketio.on('chatMessage')
 def handle_chat_message(data):
     sid = request.sid
+    start = time.time()
+
     try:
         room_id = data.get("roomId") or data.get("room_id")
         message_body = data.get("message")
-        
-        logger.info(f"[CHAT_DEBUG] Received message from {sid} for Room: {room_id}")
 
         if not room_id or not message_body:
-            logger.warning(f"[CHAT_WARN] Missing keys! Room: {room_id}, Msg Body: {bool(message_body)}")
             return
+
         player, room, error = get_player_and_room(
             sid,
             room_id,
@@ -1442,22 +1503,43 @@ def handle_chat_message(data):
             logger
         )
         if error:
-            logger.warning(f"[CHAT_AUTH_ERROR] {sid} in {room_id}: {error}")
+            logger.warning({
+                "type": "error",
+                "event": "chat_auth_failed",
+                "room": room_id,
+                "sid": sid,
+                "error": error
+            })
             return
+
         final_payload = {
             "id": message_body.get("id"),
             "username": player.get("username", "Player"),
-            "message": message_body.get("message"), # The actual string text
+            "message": message_body.get("message"),
             "timestamp": message_body.get("timestamp"),
             "userId": player.get("id"),
             "playerId": player.get("id")
         }
 
         emit('chatMessage', final_payload, to=room_id)
-        logger.info(f"[CHAT_SUCCESS] Message broadcasted to room {room_id}")
-        
+
+        end = time.time()
+
+        logger.info({
+            "type": "metric",
+            "event": "chat_message",
+            "latency_ms": round((end - start) * 1000, 2),
+            "room": room_id,
+            "player": player.get("id")
+        })
+
     except Exception as e:
-        logger.error(f"[CHAT_EXCEPTION] Critical error: {str(e)}")
+        logger.error({
+            "type": "error",
+            "event": "chat_exception",
+            "sid": sid,
+            "error": str(e)
+        })
 
 @socketio.on('leaveRoom')
 def handle_leave_room(data):
