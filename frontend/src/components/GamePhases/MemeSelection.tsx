@@ -121,6 +121,16 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
           )
         })}
       </div>
+
+      {/* Mobile Sticky Lock-in Notification */}
+      {selectedId && (
+        <div className="fixed bottom-4 left-4 right-4 z-40 bg-[#5F8B4C] text-white p-3.5 rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] flex items-center justify-between animate-slide-up sm:hidden">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 shrink-0" strokeWidth={2.5} />
+            <span className="font-poppins font-bold text-xs">Meme locked in! Waiting for squad...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

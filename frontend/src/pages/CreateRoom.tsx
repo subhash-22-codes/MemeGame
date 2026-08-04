@@ -81,7 +81,7 @@ const CreateRoom: React.FC = () => {
             <Lock className="w-6 h-6 text-[#131010]" strokeWidth={2.5} />
           </div>
           <h2 className="text-xl font-bold text-[#131010] font-poppins mb-2">Login Required</h2>
-          <p className="text-[#131010]/70 text-sm font-poppins mb-6">You need to be logged in to host a game.</p>
+          <p className="text-[#131010]/70 text-sm font-poppins mb-6">You need to be signed in to start a party room.</p>
           <button
             onClick={() => navigate('/')}
             className="w-full bg-[#5F8B4C] text-white py-3 px-6 rounded-lg font-bold font-poppins transition-all duration-200 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
@@ -101,12 +101,12 @@ const CreateRoom: React.FC = () => {
           <div className="w-14 h-14 bg-[#5F8B4C] border border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center mx-auto mb-5">
             <Check className="w-6 h-6 text-white" strokeWidth={3} />
           </div>
-          <h2 className="text-2xl font-bold text-[#131010] font-poppins mb-2">Room Created!</h2>
-          <p className="text-[#131010]/70 text-sm font-poppins font-medium mb-2">Your room code:</p>
+          <h2 className="text-2xl font-bold text-[#131010] font-poppins mb-2">Party Room Launched! 🎉</h2>
+          <p className="text-[#131010]/70 text-sm font-poppins font-medium mb-2">Your party code:</p>
           <p className="text-3xl font-black text-[#D98324] font-poppins tracking-widest mb-4">{createdRoomId}</p>
           <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#5F8B4C] uppercase tracking-widest font-courier">
             <span className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-ping" />
-            Heading to room...
+            Entering party room...
           </div>
         </div>
       </div>
@@ -127,7 +127,7 @@ const CreateRoom: React.FC = () => {
               <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> Back to Dashboard
             </button>
             <h1 className="text-3xl sm:text-4xl font-black text-[#131010] font-poppins tracking-tight leading-none">
-              Host a Game
+              Start a Party
             </h1>
           </div>
         </div>
@@ -302,7 +302,7 @@ const CreateRoom: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Play size={16} strokeWidth={3} /> Create Room
+                      <Play size={16} strokeWidth={3} /> Launch Party Room 🚀
                     </>
                   )}
                 </button>

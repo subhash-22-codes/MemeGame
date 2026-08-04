@@ -212,7 +212,7 @@ const Results: React.FC<ResultsProps> = ({
           <div className="inline-flex items-center gap-2.5 bg-white px-5 py-2.5 rounded-full border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010]">
             <div className="w-2 h-2 bg-[#D98324] rounded-full animate-pulse"></div>
             <p className="text-[#131010] font-bold font-courier text-xs uppercase tracking-widest">
-              Waiting for Host...
+              Waiting for Host to advance the chaos...
             </p>
           </div>
         )}

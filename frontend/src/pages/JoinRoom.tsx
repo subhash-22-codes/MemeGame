@@ -201,7 +201,7 @@ const JoinRoom: React.FC = () => {
               <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> {isAuthenticated ? 'Back to Dashboard' : 'Back to Home'}
             </button>
             <h1 className="text-3xl sm:text-4xl font-black text-[#131010] font-poppins tracking-tight leading-none">
-              Join a Game
+              Join a Party
             </h1>
           </div>
         </div>
@@ -219,7 +219,7 @@ const JoinRoom: React.FC = () => {
                   <Users className="w-6 h-6 text-[#D98324]" strokeWidth={2.5} />
                 </div>
                 <div>
-                  <h2 className="font-poppins font-bold text-xl text-[#131010]">Room Code</h2>
+                  <h2 className="font-poppins font-bold text-xl text-[#131010]">Party Code</h2>
                   <p className="font-poppins font-medium text-xs sm:text-sm text-[#131010]/60">Grab the 6-letter code from your host.</p>
                 </div>
               </div>
@@ -271,7 +271,7 @@ const JoinRoom: React.FC = () => {
                   ) : (
                     <>
                       <Play size={16} strokeWidth={3} />
-                      <span>Join Game</span>
+                      <span>Join Squad 🚀</span>
                     </>
                   )}
                 </button>
@@ -292,17 +292,17 @@ const JoinRoom: React.FC = () => {
                   {
                     step: '1',
                     title: "Get the Code",
-                    desc: "Ask the person hosting the game for the 6-letter room code."
+                    desc: "Ask the person starting the party for the 6-letter party code."
                   },
                   {
                     step: '2',
-                    title: "Enter the Lobby",
-                    desc: "Type it in and hit join. You'll drop right into the waiting room."
+                    title: "Enter the Party",
+                    desc: "Type it in and hit join. You'll drop right into the squad party room."
                   },
                   {
                     step: '3',
-                    title: "Wait for the Host",
-                    desc: "Hang tight! The host will start the game once everyone is in."
+                    title: "Wait for Launch",
+                    desc: "Hang tight! The host will kick off the party once everyone readies up."
                   }
                 ].map((item, i) => (
                   <div key={i} className="flex gap-4 items-start">

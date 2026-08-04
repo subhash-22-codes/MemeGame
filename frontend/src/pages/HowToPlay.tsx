@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Crown, Gamepad, Timer, Trophy, Zap, Users, MessageCircle, Star, RotateCcw, Github, Linkedin, Mail, Send, Gavel, Camera, Clock, Play, ArrowLeft, Twitter, CheckCircle, Loader2 } from 'lucide-react';
+import { Crown, Gamepad, Timer, Trophy, Zap, Users, MessageCircle, Star, RotateCcw, Github, Linkedin, Mail, Send, Camera, Clock, Play, ArrowLeft, Twitter, CheckCircle, Loader2, Award } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { API_URL } from '../config';
 const HowToPlay: React.FC = () => {
@@ -14,7 +14,7 @@ const HowToPlay: React.FC = () => {
   const [activeSection, setActiveSection] = useState('hero');
   const [submitted, setSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   useEffect(() => {
     const handleScroll = () => {
       const sections = ['hero', 'judge-selection', 'set-scene', 'meme-hunt', 'reveal', 'next-round'];
@@ -94,8 +94,8 @@ const HowToPlay: React.FC = () => {
 
   const sectionVariants = {
     hidden: { opacity: 0, y: 30 },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       y: 0,
       transition: { duration: 0.4, ease: "easeOut" }
     }
@@ -103,12 +103,12 @@ const HowToPlay: React.FC = () => {
 
   const cardVariants = {
     hidden: { opacity: 0, scale: 0.98 },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       scale: 1,
       transition: { duration: 0.3, ease: "easeOut" }
     },
-    hover: { 
+    hover: {
       y: -4,
       transition: { duration: 0.2 }
     }
@@ -124,13 +124,13 @@ const HowToPlay: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FFDDAB] font-poppins selection:bg-[#D98324] selection:text-white">
-      
+
       {/* Navigation Header */}
       <header className="bg-[#FFDDAB] border-b-4 border-[#131010] sticky top-0 z-50 transition-all">
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={() => window.history.back()}
                 className="w-10 h-10 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none rounded-lg flex items-center justify-center transition-all"
               >
@@ -143,18 +143,17 @@ const HowToPlay: React.FC = () => {
                 Rulebook
               </h1>
             </div>
-            
+
             {/* Desktop Navigation (Tactile Tabs) */}
             <nav className="hidden lg:flex items-center gap-2">
               {steps.map((step, index) => (
                 <button
                   key={step.id}
                   onClick={() => scrollToSection(step.id)}
-                  className={`px-4 py-2 font-bold text-sm rounded-lg border-2 transition-all ${
-                    activeSection === step.id 
-                      ? 'bg-[#131010] border-[#131010] text-white shadow-[2px_2px_0px_0px_#D98324]' 
+                  className={`px-4 py-2 font-bold text-sm rounded-lg border-2 transition-all ${activeSection === step.id
+                      ? 'bg-[#131010] border-[#131010] text-white shadow-[2px_2px_0px_0px_#D98324]'
                       : 'bg-transparent border-transparent text-[#131010]/60 hover:text-[#131010] hover:bg-[#131010]/5'
-                  }`}
+                    }`}
                   style={{ fontFamily: 'Courier, monospace' }}
                 >
                   {index + 1}. {step.title}
@@ -168,9 +167,8 @@ const HowToPlay: React.FC = () => {
                 <button
                   key={step.id}
                   onClick={() => scrollToSection(step.id)}
-                  className={`h-2.5 rounded-full transition-all ${
-                    activeSection === step.id ? 'bg-[#131010] w-6' : 'bg-[#131010]/20 w-2.5'
-                  }`}
+                  className={`h-2.5 rounded-full transition-all ${activeSection === step.id ? 'bg-[#131010] w-6' : 'bg-[#131010]/20 w-2.5'
+                    }`}
                 />
               ))}
             </div>
@@ -179,7 +177,7 @@ const HowToPlay: React.FC = () => {
       </header>
 
       {/* Hero Section */}
-      <motion.section 
+      <motion.section
         id="hero"
         className="container mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center relative"
         initial="hidden"
@@ -191,7 +189,7 @@ const HowToPlay: React.FC = () => {
             Player Manual
           </div>
           <h1 className="text-5xl sm:text-6xl md:text-8xl font-black text-[#131010] mb-6 tracking-tight leading-none">
-            How to Play <br/>
+            How to Play <br />
             <span className="text-[#D98324] drop-shadow-[4px_4px_0px_#131010]">MemeGame</span>
           </h1>
           <p className="text-lg sm:text-xl font-medium text-[#131010]/80 mb-12 max-w-2xl mx-auto leading-relaxed">
@@ -243,7 +241,7 @@ const HowToPlay: React.FC = () => {
 
       {/* --- STEPS --- */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-24 space-y-12 sm:space-y-16">
-        
+
         {/* Step 1: Judge Selection */}
         <motion.section id="judge-selection" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={sectionVariants}>
           <motion.div className="bg-white rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
@@ -254,38 +252,38 @@ const HowToPlay: React.FC = () => {
                     <Crown className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-black text-[#131010] tracking-tight">1. Judge Selection</h2>
-                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Choose your Overlord</p>
+                    <h2 className="text-3xl font-black text-[#131010] tracking-tight">1. Prompt Creator Selection</h2>
+                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Choose the Prompt Master</p>
                   </div>
                 </div>
-                
+
                 <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
-                  The host decides how to select the judge who will evaluate memes and determine the winner of each round.
+                  The wheel of chaos spins to select who writes the prompt for the round.
                 </p>
-                
+
                 <div className="space-y-4">
                   <div className="flex items-center gap-4 bg-[#FFDDAB]/20 border-2 border-[#131010] px-5 py-4 rounded-xl shadow-[2px_2px_0px_0px_#131010]">
                     <div className="bg-white p-2 rounded-lg border-2 border-[#131010]"><RotateCcw className="w-5 h-5 text-[#131010]" /></div>
                     <div>
-                      <h4 className="font-black text-[#131010]">Random Selection</h4>
-                      <p className="text-sm font-medium text-[#131010]/60">Spin the wheel of destiny.</p>
+                      <h4 className="font-black text-[#131010]">Wheel of Destiny</h4>
+                      <p className="text-sm font-medium text-[#131010]/60">Spin the wheel of chaos.</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 bg-[#FFDDAB]/20 border-2 border-[#131010] px-5 py-4 rounded-xl shadow-[2px_2px_0px_0px_#131010]">
                     <div className="bg-white p-2 rounded-lg border-2 border-[#131010]"><Users className="w-5 h-5 text-[#131010]" /></div>
                     <div>
-                      <h4 className="font-black text-[#131010]">Host Assignment</h4>
-                      <p className="text-sm font-medium text-[#131010]/60">Strategic judge selection.</p>
+                      <h4 className="font-black text-[#131010]">Host's Call</h4>
+                      <p className="text-sm font-medium text-[#131010]/60">Strategic prompt master assignment.</p>
                     </div>
                   </div>
                 </div>
               </div>
-              
+
               <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
                 <img src="judge2.jpg" alt="Judge" className="w-full h-full object-cover" />
                 <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
-                  <p className="font-black text-sm text-[#131010]">The Judge Has Arrived!</p>
-                  <p className="text-xs font-bold text-[#131010]/60 font-courier">Ready to evaluate your memes</p>
+                  <p className="font-black text-sm text-[#131010]">The Prompt Master Has Arrived!</p>
+                  <p className="text-xs font-bold text-[#131010]/60 font-courier">Ready to drop a wild prompt</p>
                 </div>
               </div>
             </div>
@@ -314,11 +312,11 @@ const HowToPlay: React.FC = () => {
                     <p className="text-[#FFDDAB] font-bold font-courier tracking-widest uppercase text-sm">Drop a meme-worthy line</p>
                   </div>
                 </div>
-                
+
                 <p className="text-lg text-white/90 mb-8 font-medium leading-relaxed">
-                  The judge creates a scenario, phrase, or situation that players must match with the perfect meme from their deck.
+                  The selected Prompt Creator drops a scenario, phrase, or inside joke that the squad must match with the perfect meme from their deck.
                 </p>
-                
+
                 <div className="bg-[#131010] p-5 rounded-xl border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010]">
                   <h4 className="font-bold text-[#FFDDAB] mb-3 text-sm uppercase tracking-wider font-courier">Example Scenarios:</h4>
                   <ul className="space-y-3 text-white font-medium">
@@ -351,11 +349,11 @@ const HowToPlay: React.FC = () => {
                     <p className="text-[#5F8B4C] font-bold font-courier tracking-widest uppercase text-sm">Beat the Clock</p>
                   </div>
                 </div>
-                
+
                 <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
                   Players race against time to browse through our curated collection of memes and select the one that best matches the judge's scenario.
                 </p>
-                
+
                 <div className="space-y-4 font-bold text-[#131010]">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-[#FFDDAB] rounded-md border-2 border-[#131010]"><Clock className="w-4 h-4" /></div>
@@ -367,7 +365,7 @@ const HowToPlay: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
                 <img src="memenights.jpg" alt="Hunt" className="w-full h-full object-cover" />
                 <div className="absolute top-4 right-4 bg-[#D98324] text-[#131010] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] px-4 py-2 rounded-full font-black text-xl">
@@ -404,20 +402,20 @@ const HowToPlay: React.FC = () => {
                     <Trophy className="w-7 h-7 text-[#131010]" strokeWidth={2.5} />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-black tracking-tight text-white">4. The Reveal</h2>
-                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Score the Submissions</p>
+                    <h2 className="text-3xl font-black tracking-tight text-white">4. Community Voting & Reveal</h2>
+                    <p className="text-[#D98324] font-bold font-courier tracking-widest uppercase text-sm">Rank the Funniest Memes</p>
                   </div>
                 </div>
-                
+
                 <p className="text-lg text-white/80 mb-8 font-medium leading-relaxed">
-                  Each player's meme is revealed. The judge rates each submission, and the funniest match takes the points.
+                  Each player's meme is revealed! All players vote on the submitted memes, assigning 1st, 2nd, and 3rd place medals to the funniest matches.
                 </p>
-                
+
                 <div className="grid gap-4">
                   <div className="flex items-center gap-4 bg-white/10 border-2 border-[#D98324] px-5 py-4 rounded-xl">
-                    <Gavel className="w-6 h-6 text-[#D98324]" />
+                    <Award className="w-6 h-6 text-[#D98324]" />
                     <div>
-                      <h4 className="font-bold text-white">Judge Evaluation</h4>
+                      <h4 className="font-bold text-white">Squad Evaluation</h4>
                       <div className="flex gap-1 mt-1">
                         {[...Array(5)].map((_, i) => <Star key={i} className="w-4 h-4 fill-[#D98324] text-[#D98324]" />)}
                       </div>
@@ -443,11 +441,11 @@ const HowToPlay: React.FC = () => {
                     <p className="text-[#5F8B4C] font-bold font-courier tracking-widest uppercase text-sm">Keep the momentum going</p>
                   </div>
                 </div>
-                
+
                 <p className="text-lg text-[#131010]/80 mb-8 font-medium leading-relaxed">
                   The game continues with new judges, fresh scenarios, and more hilarious meme matches. Points accumulate until a final winner is crowned!
                 </p>
-                
+
                 <div className="space-y-4 font-bold text-[#131010]">
                   <div className="flex items-center gap-3">
                     <div className="w-4 h-4 bg-[#5F8B4C] border-2 border-[#131010] rounded-full shrink-0"></div>
@@ -463,7 +461,7 @@ const HowToPlay: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Leaderboard Bento Box */}
               <div className="bg-[#FFDDAB] p-6 sm:p-8 rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010]">
                 <h3 className="text-xl sm:text-2xl font-black text-[#131010] mb-6 text-center tracking-tight">
@@ -478,11 +476,10 @@ const HowToPlay: React.FC = () => {
                   ].map((player) => (
                     <div key={player.name} className="flex items-center justify-between bg-white p-3 sm:p-4 rounded-xl border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#131010] transition-all">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-[#131010] font-black border-2 border-[#131010] ${
-                          player.position === 1 ? 'bg-[#D98324]' : 
-                          player.position === 2 ? 'bg-[#5F8B4C]' : 
-                          'bg-gray-200'
-                        }`}>
+                        <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-[#131010] font-black border-2 border-[#131010] ${player.position === 1 ? 'bg-[#D98324]' :
+                            player.position === 2 ? 'bg-[#5F8B4C]' :
+                              'bg-gray-200'
+                          }`}>
                           {player.position}
                         </div>
                         <div>
@@ -511,7 +508,7 @@ const HowToPlay: React.FC = () => {
       </div>
 
       {/* Developer Contact & Footer Section */}
-      <motion.footer 
+      <motion.footer
         className="bg-white border-t-4 border-[#131010] py-16 sm:py-24"
         initial="hidden"
         whileInView="visible"
@@ -529,9 +526,9 @@ const HowToPlay: React.FC = () => {
               Full Stack Developer passionate about building engaging digital experiences that bring people together through humor.
             </p>
           </div>
-          
+
           <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
-            
+
             {/* Contact Form (Tactile Bento) */}
             <div className="bg-[#FFDDAB] rounded-3xl p-8 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]">
               {!submitted ? (
@@ -590,7 +587,7 @@ const HowToPlay: React.FC = () => {
                 </div>
               )}
             </div>
-            
+
             {/* Links & Info */}
             <div className="flex flex-col justify-between space-y-8">
               <div className="bg-white rounded-3xl p-8 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]">

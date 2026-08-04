@@ -84,10 +84,10 @@ const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
       </div>
       
       <h2 className="text-xl sm:text-2xl font-bold text-[#131010] mb-1.5 font-poppins">
-        You are the Judge!
+        You are the Prompt Creator!
       </h2>
       <p className="text-[#131010]/70 font-medium font-poppins text-xs sm:text-sm mb-6">
-        Drop a wild, creative prompt for the lobby to match with a meme.
+        Drop a wild, creative prompt for the squad to match with a meme.
       </p>
 
       {/* 2. The Form */}
@@ -98,39 +98,41 @@ const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
             value={sentence}
             onChange={(e) => setSentence(e.target.value)}
             placeholder="e.g., When the server crashes at 2 AM..."
-            maxLength={150}
+            maxLength={100}
             disabled={isSubmitting}
-            className="w-full px-4 py-3 sm:py-3.5 text-[#131010] text-base font-semibold font-poppins bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl transition-shadow duration-200 focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010] disabled:opacity-50 placeholder:text-[#131010]/40 pr-16"
+            className="w-full px-4 py-3 bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl text-sm sm:text-base font-poppins font-medium text-[#131010] placeholder-[#131010]/40 focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#D98324] transition-all"
           />
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[10px] font-bold font-courier text-[#131010]/50 bg-white/80 px-2 py-1 rounded border border-[#131010]/10">
-            {sentence.length}/150
+          <div className="absolute right-3 bottom-3 text-[10px] font-courier font-bold text-[#131010]/40">
+            {sentence.length}/100
           </div>
         </div>
 
-        {/* Prompt Suggestions Section */}
-        <div className="pt-1">
+        {/* Suggested Prompts Banner */}
+        <div className="bg-[#FFDDAB]/30 border border-[#131010] rounded-xl p-3 text-left">
           <div className="flex items-center justify-between mb-2">
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
-              <Sparkles className="w-3 h-3 text-[#D98324]" />
-              Need inspiration?
-            </span>
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#D98324]" />
+              <span className="text-[11px] font-bold font-poppins uppercase tracking-wider text-[#131010]/70">
+                Need Inspiration?
+              </span>
+            </div>
             <button
               type="button"
               onClick={handleShuffle}
               disabled={isSubmitting}
-              aria-label="Shuffle prompt suggestions"
-              className="inline-flex items-center gap-1 text-xs font-bold text-[#5F8B4C] hover:text-[#4A7039] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 text-[11px] font-bold font-poppins text-[#D98324] hover:text-[#131010] transition-colors"
             >
               <Shuffle className="w-3 h-3" />
-              Shuffle
+              <span>Shuffle</span>
             </button>
           </div>
-          <div className="flex flex-wrap gap-2 justify-center">
-            {suggestions.map((prompt, idx) => {
+          
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions.map((prompt, index) => {
               const isCustom = customPrompts.includes(prompt);
               return (
                 <button
-                  key={idx}
+                  key={index}
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => setSentence(prompt)}
@@ -160,7 +162,7 @@ const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
           ) : (
             <>
               <Send className="w-4 h-4" strokeWidth={2.5} />
-              <span>Submit Prompt</span>
+              <span>Drop This Prompt 💥</span>
             </>
           )}
         </button>

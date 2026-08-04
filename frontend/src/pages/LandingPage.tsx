@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Laugh, 
@@ -161,10 +161,18 @@ const Input: React.FC<InputProps> = ({
 // --- Main Landing Page ---
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isAuthenticated, login, register, loading, verifyOtp } = useAuth();
   const [showGuestModal, setShowGuestModal] = useState(false);
   
   const [showLogin, setShowLogin] = useState(true);
+
+  useEffect(() => {
+    if (searchParams.get('register') === 'true') {
+      setShowLogin(false);
+    }
+  }, [searchParams]);
+
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -287,7 +295,7 @@ const LandingPage: React.FC = () => {
                 
                 <p className="text-lg sm:text-xl text-[#131010]/80 mb-10 font-medium max-w-xl mx-auto lg:mx-0 leading-relaxed">
                   Drop a prompt. Play a meme. Judge your friends. It's that simple. 
-                  The funniest degenerate in the lobby takes the crown.
+                  The funniest friend in the squad takes the crown.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row flex-wrap gap-4 justify-center lg:justify-start">
@@ -303,7 +311,7 @@ const LandingPage: React.FC = () => {
                     }}
                     icon={isAuthenticated ? <Laugh strokeWidth={3} /> : <BookOpen strokeWidth={3} />}
                   >
-                    {isAuthenticated ? 'Play Now' : 'How to Play'}
+                    {isAuthenticated ? 'Jump Into Party 🚀' : 'How to Play'}
                   </Button>
 
                   {!isAuthenticated && (
@@ -314,7 +322,7 @@ const LandingPage: React.FC = () => {
                         onClick={() => setShowGuestModal(true)}
                         icon={<Zap strokeWidth={3} />}
                       >
-                        Play as Guest
+                        Quick Party Jump (Guest) ⚡
                       </Button>
                       <Button 
                         variant="outline" 
@@ -322,7 +330,7 @@ const LandingPage: React.FC = () => {
                         onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
                         icon={<LogIn strokeWidth={3} />}
                       >
-                        Sign In to Play
+                        Sign In to Party
                       </Button>
                     </>
                   )}

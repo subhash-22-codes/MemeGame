@@ -215,7 +215,7 @@ export const PromptSpinner: React.FC<PromptSpinnerProps> = ({
               <span className="underline font-black">
                 {spinnerPlayer?.username || 'the host'}
               </span>{' '}
-              to spin the wheel...
+              to spin the wheel of chaos...
             </div>
           )}
         </div>
@@ -223,7 +223,7 @@ export const PromptSpinner: React.FC<PromptSpinnerProps> = ({
 
       {spinning && (
         <div className="text-lg font-black text-[#D98324] animate-pulse">
-          Spinning the wheel of fate... 🎲
+          Spinning the wheel of fate... good luck to the squad! 🎡
         </div>
       )}
     </div>

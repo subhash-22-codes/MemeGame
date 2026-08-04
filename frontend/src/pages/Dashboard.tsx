@@ -315,10 +315,10 @@ const Dashboard: React.FC = () => {
                 <span>SQUAD INVITE CODE</span>
               </div>
               <h2 className="font-poppins text-[#131010] text-xl sm:text-2xl font-bold mb-1 leading-tight">
-                Got a Room Code?
+                Got a Party Code?
               </h2>
               <p className="font-poppins text-[#131010]/70 text-xs sm:text-sm font-medium mb-4">
-                Enter your friend's 6-character code to jump straight into their lobby.
+                Enter your friend's 6-character code to jump straight into their party.
               </p>
             </div>
 
@@ -338,7 +338,7 @@ const Dashboard: React.FC = () => {
                 icon={isJoiningRoom ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                 className="w-full sm:w-auto"
               >
-                {isJoiningRoom ? 'Joining...' : 'Join Room'}
+                {isJoiningRoom ? 'Joining...' : 'Join Squad'}
               </Button>
             </form>
           </motion.div>
@@ -479,14 +479,13 @@ const Dashboard: React.FC = () => {
                   Create an Account
                 </h2>
                 <p className="font-poppins text-white/80 text-xs sm:text-sm mb-5 font-medium leading-relaxed max-w-lg">
-                  Your guest session expires in 24 hours. Create a free account to save your authoritative stats, track your wins, and build your meme reputation.
+                  Your guest session expires in 24 hours. Create a free account to save your party stats, track your wins, and build your meme reputation.
                 </p>
                 <Button
                   variant="secondary"
                   icon={<UserPlus size={16} strokeWidth={2.5} />}
                   onClick={() => {
-                    logout();
-                    navigate('/');
+                    navigate('/?register=true');
                   }}
                   className="w-full sm:w-auto"
                 >
@@ -513,7 +512,7 @@ const Dashboard: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-2xl border-2 border-[#131010] shadow-[6px_6px_0px_0px_#131010] p-6 overflow-hidden relative"
+              className="w-full max-w-md bg-white rounded-2xl border-2 border-[#131010] shadow-[6px_6px_0px_0px_#131010] p-6 max-h-[85vh] overflow-y-auto relative"
             >
               <div className="flex items-center justify-between border-b-2 border-[#131010] pb-4 mb-4">
                 <div className="flex items-center gap-2">

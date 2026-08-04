@@ -28,7 +28,7 @@ type AuthContextType = {
   loginAsGuest: (displayName: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   sendOtp: (email: string, purpose: 'register' | 'reset') => Promise<void>;
-  verifyOtp: (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => Promise<void>;
+  verifyOtp: (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; guestId?: string; }) => Promise<void>;
   logout: () => void;
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
   getToken: () => string | null;
@@ -154,13 +154,17 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setOtpContext({ email, purpose, pending: true, temp: otpContext?.temp });
   };
 
-  const verifyOtp = async (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => {
+  const verifyOtp = async (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; guestId?: string; }) => {
     setLoading(true);
     try {
+      const payload = {
+        ...params,
+        guestId: params.guestId || (user?.isGuest ? user.id : undefined)
+      };
       const response = await fetch(`${API_URL}/api/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (!response.ok) {

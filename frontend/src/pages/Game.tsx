@@ -138,7 +138,21 @@ const Game: React.FC = () => {
 
   const roundWinner = useMemo(() => {
     if (gamePhase !== 'results' || !gameState) return undefined;
-    return [...gameState.players].sort((a, b) => b.score - a.score)[0];
+    const { submissions, players } = gameState;
+    if (!submissions || submissions.length === 0) return undefined;
+
+    // 1. Check if any submission is explicitly marked as isWinner by backend
+    let winningSub = submissions.find(s => s.isWinner);
+    // 2. Otherwise pick the highest roundScore (or score) in this round
+    if (!winningSub) {
+      winningSub = [...submissions].sort((a, b) => {
+        const scoreA = Number(a.roundScore ?? a.score ?? 0);
+        const scoreB = Number(b.roundScore ?? b.score ?? 0);
+        return scoreB - scoreA;
+      })[0];
+    }
+    if (!winningSub || !winningSub.playerId) return undefined;
+    return players.find(p => p.id === winningSub.playerId);
   }, [gamePhase, gameState]);
 
   useEffect(() => {
@@ -210,16 +224,16 @@ const Game: React.FC = () => {
     }
     if (gamePhase === 'sentenceCreation') {
       const creatorName = gameState?.promptCreator?.username || gameState?.currentJudge?.username;
-      return (isCreator || isJudge) ? 'Create a creative meme sentence prompt!' : `Waiting for ${creatorName} to write the prompt...`;
+      return (isCreator || isJudge) ? 'Drop a wild prompt for the squad to meme!' : `Waiting for ${creatorName} to drop the prompt...`;
     }
     if (gamePhase === 'memeSelection') {
-      return 'Everyone select the funniest meme for this prompt!';
+      return 'Pick your funniest meme to match the prompt!';
     }
     if (gamePhase === 'voting') {
       return 'Rank your favourite memes (🥇 1st • 🥈 2nd • 🥉 3rd)!';
     }
     if (gamePhase === 'memeReveal' || gamePhase === 'scoring') {
-      return isJudge ? 'Rate all memes from 1-10 based on humor' : "Enjoy viewing everyone's meme responses!";
+      return "Enjoy viewing everyone's meme responses before the podium!";
     }
     return '';
   };
@@ -487,20 +501,29 @@ const Game: React.FC = () => {
                   leaveRoom(); 
                   navigate('/dashboard');
                 }}
-                bestSubmission={
-                  gameState.finalResult?.bestSubmission ||
-                  (gameState.submissions && gameState.submissions.length > 0
-                    ? (() => {
-                        const top = [...gameState.submissions].sort((a, b) => (b.score || 0) - (a.score || 0))[0];
-                        return {
-                          username: top.username || 'Player',
-                          memeUrl: top.memeUrl || '',
-                          prompt: gameState.currentSentence || top.title || 'Meme of the Match',
-                          score: top.score || 0,
-                        };
-                      })()
-                    : undefined)
-                }
+                bestSubmission={(() => {
+                  const sResult = gameState.finalResult?.bestSubmission;
+                  const topLocal = gameState.submissions && gameState.submissions.length > 0
+                    ? [...gameState.submissions].sort(
+                        (a, b) => Number(b.roundScore ?? b.score ?? 0) - Number(a.roundScore ?? a.score ?? 0)
+                      )[0]
+                    : undefined;
+                  const localScore = topLocal ? Number(topLocal.roundScore ?? topLocal.score ?? 0) : 0;
+                  const resultScore = sResult ? Number(sResult.score ?? 0) : 0;
+
+                  if (sResult && (resultScore >= localScore || !topLocal)) {
+                    return sResult;
+                  }
+                  if (topLocal) {
+                    return {
+                      username: topLocal.username || 'Player',
+                      memeUrl: topLocal.memeUrl || '',
+                      prompt: gameState.currentSentence || topLocal.title || 'Meme of the Match',
+                      score: localScore,
+                    };
+                  }
+                  return sResult;
+                })()}
               />
             )}
           </div>

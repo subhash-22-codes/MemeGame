@@ -20,7 +20,7 @@ const ConnectionStatus: React.FC = () => {
       case 'connecting':
         return {
           icon: RefreshCw,
-          text: 'Connecting',
+          text: 'Connecting to party...',
           borderColor: 'border-[#131010]',
           bgColor: 'bg-white',
           textColor: 'text-[#131010]',
@@ -29,7 +29,7 @@ const ConnectionStatus: React.FC = () => {
       case 'reconnecting':
         return {
           icon: RefreshCw,
-          text: `Reconnecting`,
+          text: `Hold tight, reconnecting...`,
           detail: `${reconnectionAttempts}/${maxReconnectionAttempts}`,
           borderColor: 'border-[#131010]',
           bgColor: 'bg-[#FFDDAB]',
@@ -39,7 +39,7 @@ const ConnectionStatus: React.FC = () => {
       case 'disconnected':
         return {
           icon: WifiOff,
-          text: 'Disconnected',
+          text: 'Lost connection to chaos',
           borderColor: 'border-red-500',
           bgColor: 'bg-white',
           textColor: 'text-red-500',
@@ -48,7 +48,7 @@ const ConnectionStatus: React.FC = () => {
       case 'error':
         return {
           icon: AlertTriangle,
-          text: 'System Error',
+          text: 'Party router stumbled',
           borderColor: 'border-red-500',
           bgColor: 'bg-white',
           textColor: 'text-red-500',

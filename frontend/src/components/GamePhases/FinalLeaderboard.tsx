@@ -151,7 +151,7 @@ const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
             className="flex-1 flex items-center justify-center gap-2 p-3 sm:p-4 bg-[#5F8B4C] text-white border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none rounded-xl font-black font-poppins text-sm uppercase tracking-wider transition-all"
           >
             <RefreshCcw className="w-5 h-5" strokeWidth={3} />
-            Play Again
+            <span>Start Rematch with Squad 🚀</span>
           </button>
         )}
         <button
@@ -159,7 +159,7 @@ const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
           className="flex-1 flex items-center justify-center gap-2 p-3 sm:p-4 bg-white border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none text-[#131010] rounded-xl font-black font-poppins text-sm uppercase tracking-wider transition-all"
         >
           <Home className="w-5 h-5" strokeWidth={3} />
-          Lobby
+          <span>Exit to Dashboard</span>
         </button>
       </div>
     </div>

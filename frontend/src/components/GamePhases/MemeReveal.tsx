@@ -29,7 +29,7 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
 
         <div className="relative z-10">
           <h3 className="text-[10px] sm:text-xs font-bold font-courier text-[#131010]/50 uppercase tracking-[0.2em] mb-2">
-            The Judge's Sentence
+            The Squad's Prompt
           </h3>
           <p className="text-lg sm:text-xl font-black text-[#131010] font-poppins leading-tight">
             "{sentence}"
@@ -105,7 +105,7 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
                   return (
                     <button
                       key={s}
-                      onClick={() => onScore(submission.playerId, s)}
+                      onClick={() => submission.playerId && onScore(submission.playerId, s)}
                       className={`py-2 text-xs sm:text-sm font-black font-poppins bg-white border-2 border-[#131010] rounded-lg text-[#131010] shadow-[2px_2px_0px_0px_#131010] ${hoverStyle} active:translate-y-[2px] active:shadow-none transition-all`}
                     >
                       {s}

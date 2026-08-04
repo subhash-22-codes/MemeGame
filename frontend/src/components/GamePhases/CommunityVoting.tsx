@@ -403,7 +403,7 @@ export const CommunityVoting: React.FC<CommunityVotingProps> = ({
               }`}
           >
             <CheckCircle className="w-5 h-5" />
-            {isReady ? 'SUBMIT RANKINGS' : 'SUBMIT CURRENT RANKINGS'}
+            <span>LOCK IN RANKINGS 🔥</span>
           </button>
         </div>
       </div>

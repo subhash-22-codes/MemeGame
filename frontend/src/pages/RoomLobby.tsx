@@ -264,18 +264,18 @@ const RoomLobby: React.FC = () => {
             className="w-24 h-24 mx-auto mb-6 drop-shadow-md"
           />
           <h2 className="font-poppins text-[#131010] text-2xl font-black mb-2">
-            {connectionState === 'connecting' && 'Connecting...'}
-            {connectionState === 'reconnecting' && 'Reconnecting...'}
-            {connectionState === 'connected' && 'Joining Lobby...'}
-            {connectionState === 'disconnected' && 'Connection Lost'}
-            {connectionState === 'error' && 'Connection Error'}
+            {connectionState === 'connecting' && 'Connecting to Party...'}
+            {connectionState === 'reconnecting' && 'Hold Tight, Reconnecting...'}
+            {connectionState === 'connected' && 'Joining Party Room...'}
+            {connectionState === 'disconnected' && 'Connection to Party Lost'}
+            {connectionState === 'error' && 'Party Router Stumbled'}
           </h2>
           <p className="font-poppins text-sm font-medium text-[#131010]/60 mb-6">
-            {connectionState === 'connecting' && 'Establishing link...'}
-            {connectionState === 'reconnecting' && 'Restoring your session...'}
-            {connectionState === 'connected' && 'Hold on tight...'}
-            {connectionState === 'disconnected' && 'Check your wifi, bro.'}
-            {connectionState === 'error' && 'Server rejected connection.'}
+            {connectionState === 'connecting' && 'Warming up the meme deck...'}
+            {connectionState === 'reconnecting' && 'Restoring your chaos session...'}
+            {connectionState === 'connected' && 'Entering squad room...'}
+            {connectionState === 'disconnected' && 'Checking wifi signal...'}
+            {connectionState === 'error' && 'Try again in a second'}
           </p>
 
           {(connectionState === 'disconnected' || connectionState === 'error') && (
@@ -297,7 +297,7 @@ const RoomLobby: React.FC = () => {
   const hostId = gameState.host.id;
 
   return (
-    <div className="min-h-screen bg-[#FFDDAB] p-4 sm:p-6 lg:p-8 flex flex-col">
+    <div className="min-h-screen bg-[#FFDDAB] p-4 sm:p-6 lg:p-8 flex flex-col pb-28 sm:pb-8">
       <ConnectionStatus />
       
       <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col">
@@ -314,7 +314,7 @@ const RoomLobby: React.FC = () => {
             <div className="absolute -inset-1 bg-[#131010] rounded-xl sm:rounded-2xl blur-sm opacity-20 group-hover:opacity-30 transition duration-200"></div>
             <div className="relative bg-white border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] hover:shadow-[6px_6px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all rounded-xl sm:rounded-2xl px-6 py-4 sm:px-10 sm:py-5 flex flex-col items-center">
               <span className="font-poppins font-bold text-xs sm:text-sm text-[#131010]/50 uppercase tracking-widest mb-1">
-                Lobby Access Code
+                Party Code (Share With Squad)
               </span>
               <div className="flex items-center gap-4">
                 <span className="font-courier text-[#D98324] text-4xl sm:text-5xl font-black tracking-widest">
@@ -532,7 +532,7 @@ const RoomLobby: React.FC = () => {
         )}
 
         {/* Action Buttons Pinned to Bottom */}
-        <div className="mt-6 sm:mt-8 pt-6 border-t-2 border-[#131010]/10 flex flex-col sm:flex-row justify-between items-center gap-4 animate-fade-in">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#FFDDAB] sm:bg-transparent border-t-2 border-[#131010] z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] sm:static sm:p-0 sm:border-t-0 sm:shadow-none sm:mt-8 sm:pt-6 sm:border-t-2 sm:border-[#131010]/10 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4 animate-fade-in">
           {isHost ? (
             <>
               <button
@@ -557,12 +557,12 @@ const RoomLobby: React.FC = () => {
               >
                 <Play className="w-5 h-5 fill-current" strokeWidth={2.5} />
                 {!isConnected
-                  ? 'Connecting...'
+                  ? 'Connecting to party...'
                   : !allReady
-                  ? 'Waiting for players...'
+                  ? 'Waiting for squad to ready up...'
                   : players.length < 3
-                  ? 'Need 3+ Players'
-                  : 'Start Game'}
+                  ? 'Need 3+ Players to Party'
+                  : 'Start Party 🚀'}
               </button>
             </>
           ) : (
@@ -577,7 +577,7 @@ const RoomLobby: React.FC = () => {
               </button>
               
               <div className="flex items-center gap-3 bg-white border-2 border-[#131010] px-6 py-3 rounded-lg shadow-[3px_3px_0px_0px_#131010]">
-                <span className="font-poppins font-bold text-sm text-[#131010]">Waiting for host to start...</span>
+                <span className="font-poppins font-bold text-sm text-[#131010]">Waiting for host to kick off the party...</span>
               </div>
             </div>
           )}
