@@ -51,6 +51,34 @@ def get_player_and_room(
       
 
 
+def get_client_safe_room(room: dict, target_player_id: str | None = None) -> dict:
+    if not room:
+        return room
+
+    if room.get("gamePhase") == "voting":
+        safe_room = dict(room)
+        submissions = room.get("submissions", [])
+        filtered_subs = []
+        for s in submissions:
+            # 1) A player must never receive their own meme in the voting payload
+            if target_player_id and s.get("playerId") == target_player_id:
+                continue
+            # 2) Strip playerId from outbound payload for anonymity
+            sub_copy = {k: v for k, v in s.items() if k != "playerId"}
+            filtered_subs.append(sub_copy)
+        safe_room["submissions"] = filtered_subs
+        if target_player_id and "playerMemes" in room and target_player_id in room.get("playerMemes", {}):
+            safe_room["availableMemes"] = room["playerMemes"][target_player_id]
+        return safe_room
+
+    if target_player_id and "playerMemes" in room and target_player_id in room.get("playerMemes", {}):
+        safe_room = dict(room)
+        safe_room["availableMemes"] = room["playerMemes"][target_player_id]
+        return safe_room
+
+    return room
+
+
 def update_and_broadcast_state(
     room_id: str,
     update_query: dict,
@@ -64,6 +92,9 @@ def update_and_broadcast_state(
     Update game state in Mongo and broadcast new state to clients.
     """
     try:
+        old_room = rooms_collection.find_one({"roomId": room_id}, {"gamePhase": 1})
+        old_phase = old_room.get("gamePhase") if old_room else None
+
         if "$set" not in update_query:
             update_query["$set"] = {}
 
@@ -80,12 +111,21 @@ def update_and_broadcast_state(
                 "gamePhase": 1,
                 "currentRound": 1,
                 "totalRounds": 1,
-                "currentJudge": 1,
+                "promptCreator": 1,
+                "creatorOrder": 1,
+                "creatorHistory": 1,
+                "wheelSpinnerId": 1,
+                "wheelSpun": 1,
+                "spinStartTime": 1,
+                "votedPlayerIds": 1,
                 "currentSentence": 1,
                 "submissions": 1,
                 "host": 1,
                 "_id": 0,
-                "availableMemes": 1
+                "availableMemes": 1,
+                "playerMemes": 1,
+                "rerollTokensUsed": 1,
+                "customPrompts": 1
             }
         )
 
@@ -93,8 +133,20 @@ def update_and_broadcast_state(
             logger.error(f"Failed to find room {room_id} after update")
             return
 
-        socketio.emit("gameStateUpdate", json_safe(room), to=room_id)
-        logger.info(f"[STATE_CHANGE] Room {room_id} advanced to {new_phase}")
+        if new_phase == "voting" or room.get("gamePhase") == "voting":
+            players = room.get("players", [])
+            for p in players:
+                pid = p.get("id")
+                if pid:
+                    safe_room = get_client_safe_room(room, pid)
+                    socketio.emit("gameStateUpdate", json_safe(safe_room), to=f"player_{pid}")
+        else:
+            socketio.emit("gameStateUpdate", json_safe(room), to=room_id)
+            
+        if old_phase != new_phase:
+            logger.info(f"[STATE_CHANGE] Room {room_id} advanced from {old_phase} to {new_phase}")
+        else:
+            logger.info(f"[STATE_UPDATE] Room {room_id} updated in phase {new_phase}")
 
     except Exception as e:
         logger.error(f"Error in update_and_broadcast_state: {e}")
@@ -103,79 +155,4 @@ def update_and_broadcast_state(
             {"error": "A server error occurred", "code": "STATE_CHANGE_FAILED"},
             to=room_id
         )
-        
-
-
-def finalize_game(
-    room_id: str,
-    rooms_collection,
-    game_results_collection,
-    logger
-) -> dict | None:
-    try:
-        room = rooms_collection.find_one({"roomId": room_id})
-        if not room:
-            return None
-
-        if room.get("gamePhase") not in ("results", "finalResults", "memeReveal"):
-            logger.warning(f"[FINALIZE_SKIP] Room {room_id} is in phase {room.get('gamePhase')}")
-            return None
-
-        total_rounds = int(room.get("totalRounds", 0))
-        current_round = int(room.get("currentRound", 0))
-
-        if current_round < total_rounds:
-            return None
-
-        players = room.get("players", [])
-
-        top_score = max(int(p.get("score", 0)) for p in players) if players else 0
-
-        winners = [
-            {
-                "id": p.get("id"),
-                "username": p.get("username"),
-                "score": int(p.get("score", 0)),
-                "avatar": p.get("avatar")
-            }
-            for p in players
-            if int(p.get("score", 0)) == top_score
-        ]
-
-        host_data = room.get("host", {})
-        host_id = host_data.get("id") if host_data else None
-
-        result_doc = {
-            "roomId": room_id,
-            "host": host_data,
-            "allJudges": [host_id] if host_id else [],
-            "winners": winners,
-            "players": [
-                {
-                    "id": p.get("id"),
-                    "username": p.get("username"),
-                    "score": int(p.get("score", 0)),
-                    "avatar": p.get("avatar")
-                }
-                for p in players
-            ],
-            "totalRounds": total_rounds,
-            "createdAt": datetime.utcnow()
-        }
-
-        game_results_collection.update_one(
-            {"roomId": room_id},
-            {"$set": result_doc},
-            upsert=True
-        )
-
-        rooms_collection.update_one(
-            {"roomId": room_id},
-            {"$set": {"status": "archived", "cleanupAt": datetime.utcnow() + timedelta(minutes=5)}}
-        )
-
-        return result_doc
-
-    except Exception as e:
-        logger.error(f"finalize_game error: {e}")
-        return None
+        
