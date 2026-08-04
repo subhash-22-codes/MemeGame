@@ -1084,6 +1084,7 @@ def register_socket_events(socketio):
                     total_pts += max(1, min(5, rating))
 
             sub["roundScore"] = total_pts
+            sub["score"] = total_pts
             sub["rank1Count"] = r1
             sub["rank2Count"] = r2
             sub["rank3Count"] = r3
@@ -1097,6 +1098,7 @@ def register_socket_events(socketio):
             for sub in submissions:
                 if sub is best_sub and sort_key(sub)[0] > 0:
                     sub["roundScore"] += 15
+                    sub["score"] = sub["roundScore"]
                     sub["isWinner"] = True
                 else:
                     sub["isWinner"] = False

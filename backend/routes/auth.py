@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from core.database import (
     JWT_SECRET_KEY, users_collection, otp_collection,
-    redis_client, rate_limit_ip
+    redis_client, rate_limit_ip, db
 )
 from middleware.auth import create_guest_token
 from utils.auth_utils import validate_email_format
@@ -20,11 +20,11 @@ from services.email_service import (
     send_registration_otp_email, send_professional_otp_email,
     send_email
 )
+from services.user_migration import migrate_guest_to_account
 
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
-
 # --- Constants ---
 MAX_OTP_ATTEMPTS = 5
 OTP_LOCKOUT_MINUTES = 15
@@ -225,6 +225,13 @@ def verify_otp():
             })
             user_id = str(insert.inserted_id)
             user = users_collection.find_one({"_id": insert.inserted_id})
+
+            guest_id = data.get("guestId")
+            if guest_id:
+                mig_res = migrate_guest_to_account(guest_id, user_id, username, db)
+                if mig_res.get("success"):
+                    logger.info(f"[REGISTER] Successfully migrated guest {guest_id} to new account {user_id}")
+                    user = users_collection.find_one({"_id": insert.inserted_id})
 
         elif purpose == "reset":
             if not user:
