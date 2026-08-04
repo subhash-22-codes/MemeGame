@@ -5,28 +5,33 @@ import { API_URL } from '../config';
 type User = {
   id: string;
   username: string;
-  email: string;
+  email?: string;
   avatar?: string;
+  isGuest?: boolean;
 };
 
 type JWTPayload = {
   exp: number;
-  email: string;
+  email?: string;
   id?: string;
   username?: string;
+  isGuest?: boolean;
 };
 
 
 type AuthContextType = {
   user: User | null;
   isAuthenticated: boolean;
+  isGuest: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginAsGuest: (displayName: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   sendOtp: (email: string, purpose: 'register' | 'reset') => Promise<void>;
   verifyOtp: (params: { email: string; otp: string; purpose: 'register' | 'reset'; username?: string; password?: string; }) => Promise<void>;
   logout: () => void;
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
+  getToken: () => string | null;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -60,6 +65,35 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
     setLoading(false);
   }, []);
+
+  const loginAsGuest = async (displayName: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create guest session');
+      }
+      
+      const guestUser: User = {
+        ...data.user,
+        isGuest: true
+      };
+      
+      setUser(guestUser);
+      localStorage.setItem('user', JSON.stringify(guestUser));
+      localStorage.setItem('token', data.token);
+    } catch (error) {
+      console.error('Guest login failed:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const register = async (username: string, email: string, password: string) => {
     setLoading(true);
@@ -151,10 +185,13 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+    localStorage.removeItem('sessionId');
   };
 
+  const getToken = () => localStorage.getItem('token');
+
   const authFetch = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     const headers = {
       ...(options.headers || {}),
       Authorization: `Bearer ${token}`,
@@ -169,13 +206,16 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       value={{
         user,
         isAuthenticated: !!user,
+        isGuest: !!user?.isGuest,
         loading,
         login,
+        loginAsGuest,
         register,
         sendOtp,
         verifyOtp,
         logout,
-        authFetch
+        authFetch,
+        getToken
       }}
     >
       {children}

@@ -82,16 +82,6 @@ const JudgeCelebration: React.FC<JudgeCelebrationProps> = ({ playerName, onCompl
         </div>
 
       </div>
-
-      <style>{`
-        @keyframes bounce-slow {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-5px); }
-        }
-        .animate-bounce-slow {
-          animation: bounce-slow 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 };

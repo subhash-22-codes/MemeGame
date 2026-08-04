@@ -71,7 +71,7 @@ const Chat: React.FC = () => {
   );
 };
 
-const getUserColor = (username: string) => {
+const getUserColor = (username?: string) => {
   const colors = [
     '#D98324', // orange
     '#5F8B4C', // green
@@ -83,6 +83,8 @@ const getUserColor = (username: string) => {
     '#CA8A04'  // yellow/gold
   ];
 
+  if (!username) return colors[0];
+
   let hash = 0;
   for (let i = 0; i < username.length; i++) {
     hash = username.charCodeAt(i) + ((hash << 5) - hash);
@@ -92,6 +94,14 @@ const getUserColor = (username: string) => {
 };
 
 const ChatMessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
+  if (message.type === 'system') {
+    return (
+      <div className="animate-fade-in text-xs py-1.5 px-2.5 my-1 bg-[#FFDDAB]/40 border border-[#131010]/20 rounded-lg text-center font-bold text-[#131010]/70 italic">
+        {message.message}
+      </div>
+    );
+  }
+
   const color = getUserColor(message.username);
 
   return (

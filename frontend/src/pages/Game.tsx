@@ -15,10 +15,14 @@ import MemeSelection from '../components/GamePhases/MemeSelection';
 import MemeGallery from '../components/GamePhases/MemeReveal'; 
 import Results from '../components/GamePhases/Results';
 import FinalLeaderboard from '../components/GamePhases/FinalLeaderboard';
+import { PromptSpinner } from '../components/GamePhases/PromptSpinner';
+import { CommunityVoting } from '../components/GamePhases/CommunityVoting';
 import Timer from '../components/UI/Timer';
+import AvatarTray from '../components/UI/AvatarTray';
 import PlayerStatus from '../components/UI/PlayerStatus';
 import FeedbackModal from '../components/UI/FeedbackModal';
 import Chat from '../components/Chat';
+import { useSound } from '../hooks/useSound';
 
 const Game: React.FC = () => {
   // --- WIRING INTACT ---
@@ -26,6 +30,7 @@ const Game: React.FC = () => {
     gameState,
     isHost,
     isJudge,
+    isCreator,
     isRestoring,
     submitSentence,
     selectMeme,
@@ -33,6 +38,7 @@ const Game: React.FC = () => {
     requestNextRound,
     leaveRoom,
     startGame,
+    spinWheel,
   } = useGame();
   const { chatMessages } = useGame();
   
@@ -41,6 +47,7 @@ const Game: React.FC = () => {
   
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const { play } = useSound(soundEnabled);
   const [showJudgeCelebration, setShowJudgeCelebration] = useState(false);
   const [previousJudgeId, setPreviousJudgeId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -111,9 +118,10 @@ const Game: React.FC = () => {
     if (!isChatOpen) {
       setUnreadCount(prev => prev + 1);
     }
+    play('pop');
     setPrevMessageCount(chatMessages.length);
   }
-}, [chatMessages, isChatOpen, prevMessageCount]);
+}, [chatMessages, isChatOpen, prevMessageCount, play]);
 
   useEffect(() => {
     if (isChatOpen) {
@@ -121,7 +129,12 @@ const Game: React.FC = () => {
     }
   }, [isChatOpen]);
 
-  const timerActive = timerDuration > 0 && gamePhase === 'memeSelection';
+  const timerActive = timerDuration > 0 && ['sentenceCreation', 'memeSelection', 'voting', 'scoring', 'memeReveal'].includes(gamePhase);
+  const timerLabel = gamePhase === 'sentenceCreation' 
+    ? 'Prompt Cooking Time' 
+    : gamePhase === 'memeSelection' 
+    ? 'Meme Selection Time' 
+    : 'Scoring Phase Time';
 
   const roundWinner = useMemo(() => {
     if (gamePhase !== 'results' || !gameState) return undefined;
@@ -166,9 +179,9 @@ const Game: React.FC = () => {
   }, [gamePhase, gameState]);
   
   const handlePlayAgain = () => { startGame(); };
-  const handleSentenceSubmit = (sentence: string) => { submitSentence(sentence); };
-  const handleMemeSelect = (memeId: string) => { selectMeme(memeId); };
-  const handleMemeScore = (playerId: string, score: number) => { if (isJudge) scoreMeme(playerId, score); };
+  const handleSentenceSubmit = (sentence: string) => { play('success'); submitSentence(sentence); };
+  const handleMemeSelect = (memeId: string) => { play('click'); selectMeme(memeId); };
+  const handleMemeScore = (playerId: string, score: number) => { play('click'); if (isJudge) scoreMeme(playerId, score); };
   const handleRequestNextRound = () => { requestNextRound(); };
   const handleLeaveGame = () => {
     leaveRoom();
@@ -178,8 +191,10 @@ const Game: React.FC = () => {
   
   const getPhaseTitle = () => {
     switch (gamePhase) {
+      case 'promptSpinner': return 'Prompt Creator Selection';
       case 'sentenceCreation': return 'Creating Sentence';
       case 'memeSelection': return 'Selecting Memes';
+      case 'voting': return 'Community Voting';
       case 'memeReveal': return 'Revealing Memes';
       case 'scoring': return 'Scoring Round';
       case 'results': return 'Round Results';
@@ -190,11 +205,18 @@ const Game: React.FC = () => {
 
 
   const getPhaseDescription = () => {
+    if (gamePhase === 'promptSpinner') {
+      return 'Spinning the wheel to select who creates the next prompt!';
+    }
     if (gamePhase === 'sentenceCreation') {
-      return isJudge ? 'Create a meme sentence prompt' : `Waiting for ${gameState?.currentJudge?.username} to write the prompt`;
+      const creatorName = gameState?.promptCreator?.username || gameState?.currentJudge?.username;
+      return (isCreator || isJudge) ? 'Create a creative meme sentence prompt!' : `Waiting for ${creatorName} to write the prompt...`;
     }
     if (gamePhase === 'memeSelection') {
-      return isJudge ? 'Players are selecting their memes' : 'Select the perfect meme for this sentence';
+      return 'Everyone select the funniest meme for this prompt!';
+    }
+    if (gamePhase === 'voting') {
+      return 'Rank your favourite memes (🥇 1st • 🥈 2nd • 🥉 3rd)!';
     }
     if (gamePhase === 'memeReveal' || gamePhase === 'scoring') {
       return isJudge ? 'Rate all memes from 1-10 based on humor' : "Enjoy viewing everyone's meme responses!";
@@ -203,7 +225,10 @@ const Game: React.FC = () => {
   };
   
   const chatAllowed =
+    gamePhase === "promptSpinner" ||
     gamePhase === "sentenceCreation" ||
+    gamePhase === "memeSelection" ||
+    gamePhase === "voting" ||
     gamePhase === "memeReveal" ||
     gamePhase === "scoring"|| gamePhase === "results" || gamePhase === "finalResults";
 
@@ -264,6 +289,7 @@ const Game: React.FC = () => {
               <div className="hidden sm:flex items-center gap-2">
                 <button 
                   onClick={() => setSoundEnabled(!soundEnabled)} 
+                  aria-label="Toggle sound"
                   className="w-8 h-8 rounded-xl border-2 border-[#131010] bg-white flex items-center justify-center 
                   shadow-[3px_3px_0px_0px_#131010] 
                   hover:bg-[#FFDDAB] 
@@ -282,6 +308,7 @@ const Game: React.FC = () => {
                       setIsChatOpen(prev => !prev);
                     }
                   }} 
+                  aria-label="Toggle chat"
                   className={`relative w-8 h-8 rounded-xl border-2 border-[#131010] flex items-center justify-center 
                   shadow-[3px_3px_0px_0px_#131010] 
                   active:translate-y-[2px] active:shadow-none 
@@ -298,6 +325,7 @@ const Game: React.FC = () => {
                 </button>
                <button 
                   onClick={() => setShowLeaveConfirm(true)} 
+                  aria-label="Leave game"
                   className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all font-bold text-xs flex items-center gap-1.5"
                 >
                   <LogOut className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -308,6 +336,7 @@ const Game: React.FC = () => {
               {/* Mobile Menu Toggle */}
               <button 
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+                aria-label="Open mobile menu"
                 className="sm:hidden w-10 h-10 rounded-lg border-2 border-[#131010] bg-white flex items-center justify-center text-[#131010] shadow-[2px_2px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all"
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" strokeWidth={2.5} /> : <Menu className="w-5 h-5" strokeWidth={2.5} />}
@@ -334,9 +363,12 @@ const Game: React.FC = () => {
       {/* Global Timer Bar */}
       {timerActive && (
         <div className="bg-[#131010] border-b-2 border-[#131010]">
-          <Timer duration={timerDuration} onComplete={() => {}} isActive={timerActive} label="Selection Time" />
+          <Timer duration={timerDuration} onComplete={() => {}} isActive={timerActive} label={timerLabel} />
         </div>
       )}
+
+      {/* Live Ready Checkmarks Avatar Tray */}
+      <AvatarTray gameState={gameState} currentUserId={user.id} />
 
       {/* --- MAIN CONTENT AREA --- */}
       <div className="flex flex-col lg:flex-row flex-1 relative min-h-0">
@@ -354,22 +386,35 @@ const Game: React.FC = () => {
               </div>
             )}
 
-            {/* JUDGE VIEW: Writing the Sentence */}
-            {gamePhase === 'sentenceCreation' && isJudge && (
+            {/* PROMPT SPINNER VIEW: Rotating the Wheel */}
+            {gamePhase === 'promptSpinner' && (
+              <PromptSpinner
+                players={gameState.players}
+                wheelSpinnerId={gameState.wheelSpinnerId}
+                promptCreator={gameState.promptCreator || gameState.currentJudge}
+                wheelSpun={gameState.wheelSpun}
+                spinStartTime={gameState.spinStartTime}
+                currentUserId={user.id}
+                onSpin={() => spinWheel()}
+              />
+            )}
+
+            {/* CREATOR VIEW: Writing the Sentence */}
+            {gamePhase === 'sentenceCreation' && (isCreator || isJudge) && (
               <SentenceInput onSubmit={handleSentenceSubmit} />
             )}
             
-            {/* PLAYER VIEW: Waiting for Judge */}
-            {gamePhase === 'sentenceCreation' && !isJudge && (
+            {/* PLAYER VIEW: Waiting for Prompt Creator */}
+            {gamePhase === 'sentenceCreation' && !isCreator && !isJudge && (
               <div className="bg-white rounded-2xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010] text-center max-w-md mx-auto mt-4 sm:mt-10 transform transition-all hover:-translate-y-1">
                 <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFDDAB] px-3 py-1 rounded-md border-2 border-[#131010] font-black text-[10px] text-[#131010] uppercase tracking-widest mb-6">
-                  <Gavel className="w-3 h-3" strokeWidth={3} /> Current Judge
+                  <Gavel className="w-3 h-3" strokeWidth={3} /> Prompt Creator
                 </div>
                 
                 <div className="relative w-24 h-24 sm:w-32 sm:h-32 mx-auto mb-6">
                   <img 
-                    src={gameState.currentJudge?.avatar || 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=judge'} 
-                    alt="Judge" 
+                    src={(gameState.promptCreator || gameState.currentJudge)?.avatar || 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=creator'} 
+                    alt="Prompt Creator" 
                     className="w-full h-full rounded-2xl border-4 border-[#131010] shadow-[4px_4px_0px_0px_#131010] object-cover bg-[#FFDDAB]"
                   />
                   <div className="absolute -bottom-3 -right-3 bg-[#D98324] p-2 rounded-xl border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010]">
@@ -378,7 +423,7 @@ const Game: React.FC = () => {
                 </div>
                 
                 <h2 className="text-2xl sm:text-3xl font-black text-[#131010] mb-2 truncate">
-                  {gameState.currentJudge?.username}
+                  {(gameState.promptCreator || gameState.currentJudge)?.username}
                 </h2>
                 
                 <div className="flex items-center justify-center gap-3 mt-8 bg-[#131010]/5 py-3 px-4 rounded-xl border-2 border-[#131010] border-dashed">
@@ -388,13 +433,21 @@ const Game: React.FC = () => {
               </div>
             )}
 
-            {/* Game Phase Components */}
-            {gamePhase === 'memeSelection' && !isJudge && gameState.currentSentence && (
+            {/* UNIVERSAL MEME SELECTION VIEW */}
+            {gamePhase === 'memeSelection' && gameState.currentSentence && (
               <MemeSelection
                 sentence={gameState.currentSentence}
                 onSelect={handleMemeSelect}
                 isSubmitted={hasUserSubmitted}
                 timeLeft={timerActive ? timerDuration : undefined}
+              />
+            )}
+
+            {/* COMMUNITY VOTING VIEW */}
+            {gamePhase === 'voting' && gameState.currentSentence && (
+              <CommunityVoting
+                sentence={gameState.currentSentence}
+                submissions={gameState.submissions}
               />
             )}
 
@@ -419,6 +472,8 @@ const Game: React.FC = () => {
                 isHost={isHost}
                 onNextRound={handleRequestNextRound}
                 isGameEnd={gameState.currentRound === gameState.totalRounds}
+                submissions={gameState.submissions}
+                sentence={gameState.currentSentence}
               />
             )}
 
@@ -432,6 +487,20 @@ const Game: React.FC = () => {
                   leaveRoom(); 
                   navigate('/dashboard');
                 }}
+                bestSubmission={
+                  gameState.finalResult?.bestSubmission ||
+                  (gameState.submissions && gameState.submissions.length > 0
+                    ? (() => {
+                        const top = [...gameState.submissions].sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+                        return {
+                          username: top.username || 'Player',
+                          memeUrl: top.memeUrl || '',
+                          prompt: gameState.currentSentence || top.title || 'Meme of the Match',
+                          score: top.score || 0,
+                        };
+                      })()
+                    : undefined)
+                }
               />
             )}
           </div>
@@ -560,14 +629,6 @@ const Game: React.FC = () => {
       </div>
     )}
 
-      <style>{`
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in-up { animation: fade-in-up 0.3s ease-out forwards; }
-      `}</style>
-
       {showFeedback && (
         <FeedbackModal onClose={() => setShowFeedback(false)} />
       )}
@@ -575,6 +636,7 @@ const Game: React.FC = () => {
       {chatAllowed && !isChatOpen && (
         <button
           onClick={() => setIsChatOpen(true)}
+          aria-label="Open chat"
           className="lg:hidden fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full border-2 border-[#131010] bg-white shadow-[4px_4px_0px_0px_#131010] flex items-center justify-center"
         >
           <MessageSquare className="w-6 h-6 text-[#131010]" />

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGame, Player } from '../context/GameContext';
 import { useAuth } from '../context/AuthContext';
 import ConnectionStatus from '../components/ConnectionStatus';
-import memeLoadingImage from '../images/memeloading.png';
+import memeLoadingImage from '../images/memeloading.webp';
 import { toast } from 'react-hot-toast';
 import { 
   Copy, 
@@ -20,7 +20,8 @@ import {
   WifiOff,
   RefreshCw,
   MessageCircle,
-  Send
+  Send,
+  AlertCircle
 } from 'lucide-react';
 
 // --- Modals (Untouched logic, styled to match bento aesthetic) ---
@@ -100,7 +101,8 @@ const PLAYER_CHAT_COLORS = [
   "bg-[#ECEFF1]"  // gray
 ];
 
-function getPlayerColor(id: string) {
+function getPlayerColor(id?: string) {
+  if (!id) return PLAYER_CHAT_COLORS[0];
   let hash = 0;
 
   for (let i = 0; i < id.length; i++) {
@@ -183,6 +185,23 @@ const RoomLobby: React.FC = () => {
         fallbackCopy(gameState.roomId);
         setCopiedRoomId(true);
         setTimeout(() => setCopiedRoomId(false), 2000);
+      }
+    }
+  };
+
+  const copyInviteLink = () => {
+    if (gameState?.roomId) {
+      const inviteUrl = `${window.location.origin}/join/${gameState.roomId}`;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(inviteUrl).then(() => {
+          toast.success('Invite link copied!');
+        }).catch(() => {
+          fallbackCopy(inviteUrl);
+          toast.success('Invite link copied!');
+        });
+      } else {
+        fallbackCopy(inviteUrl);
+        toast.success('Invite link copied!');
       }
     }
   };
@@ -285,7 +304,13 @@ const RoomLobby: React.FC = () => {
         
         {/* Header / Room Code Panel */}
         <div className="mb-6 sm:mb-8 text-center animate-fade-in">
-          <div className="inline-block relative group cursor-pointer" onClick={copyRoomIdToClipboard}>
+          <div 
+            className="inline-block relative group cursor-pointer" 
+            onClick={copyRoomIdToClipboard}
+            role="button"
+            tabIndex={0}
+            aria-label="Copy Room ID to clipboard"
+          >
             <div className="absolute -inset-1 bg-[#131010] rounded-xl sm:rounded-2xl blur-sm opacity-20 group-hover:opacity-30 transition duration-200"></div>
             <div className="relative bg-white border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] hover:shadow-[6px_6px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none transition-all rounded-xl sm:rounded-2xl px-6 py-4 sm:px-10 sm:py-5 flex flex-col items-center">
               <span className="font-poppins font-bold text-xs sm:text-sm text-[#131010]/50 uppercase tracking-widest mb-1">
@@ -316,6 +341,15 @@ const RoomLobby: React.FC = () => {
                   </>
                 )}
               </div>
+              <div className="mt-3 flex items-center justify-center">
+                <button
+                  onClick={copyInviteLink}
+                  className="inline-flex items-center gap-1.5 bg-[#D98324] text-[#131010] px-4 py-1.5 rounded-lg text-xs font-poppins font-bold border border-[#131010] shadow-[2px_2px_0px_0px_#131010] hover:shadow-[3px_3px_0px_0px_#131010] active:translate-y-[1px] active:shadow-none transition-all"
+                >
+                  <Copy className="w-3 h-3" strokeWidth={3} />
+                  Copy Invite Link
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -330,8 +364,8 @@ const RoomLobby: React.FC = () => {
                 <Users size={20} className="text-[#131010]" strokeWidth={2.5} />
                 <h2 className="font-poppins font-black text-xl text-[#131010]">The Squad</h2>
               </div>
-              <span className="font-poppins font-bold text-sm text-[#131010]/60 bg-white border border-[#131010] px-3 py-1 rounded-lg shadow-[2px_2px_0px_0px_#131010]">
-                {players.length} / 8 Players
+              <span className="font-poppins font-bold text-xs sm:text-sm text-[#131010]/70 bg-white border border-[#131010] px-3 py-1 rounded-lg shadow-[2px_2px_0px_0px_#131010]">
+                {players.length} / 10 Max • 8 Recommended
               </span>
             </div>
 
@@ -423,9 +457,10 @@ const RoomLobby: React.FC = () => {
                   </div>
                 )}
                 {/* Typed msg to remove ESLint 'any' error */}
-                {chatMessages.map((msg: { id: string; userId?: string; playerId?: string; username: string; message: string }) => {
-                  const isMe = msg.userId === user?.id || msg.playerId === user?.id;
-                  const playerId = msg.userId || msg.playerId || msg.username;
+                {chatMessages.map((msg: { id: string; userId?: string; playerId?: string; username?: string; sender?: string; senderId?: string; message: string }) => {
+                  const isMe = msg.userId === user?.id || msg.playerId === user?.id || msg.senderId === user?.id;
+                  const senderName = msg.username || msg.sender || 'Unknown';
+                  const playerId = msg.userId || msg.playerId || msg.senderId || senderName || 'default';
                   const playerColor = getPlayerColor(playerId);
                   
                   return (
@@ -436,7 +471,7 @@ const RoomLobby: React.FC = () => {
                       className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                     >
                       <span className="text-[10px] font-bold font-courier text-[#131010]/40 px-1 mb-1 uppercase tracking-wider">
-                        {isMe ? 'You' : msg.username}
+                        {isMe ? 'You' : senderName}
                       </span>
                      <div 
                      className={`px-3 py-2 rounded-xl max-w-[85%] text-sm font-poppins font-medium border-2 shadow-[2px_2px_0px_0px_#131010] ${
@@ -481,6 +516,21 @@ const RoomLobby: React.FC = () => {
           </div>
         </div>
 
+        {/* Host Explanation Notice for < 3 players */}
+        {isHost && players.length < 3 && (
+          <div className="mt-6 bg-[#FFDDAB] rounded-xl p-4 border-2 border-[#131010] shadow-[3px_3px_0px_0px_#131010] flex items-start gap-3 animate-fade-in text-left">
+            <AlertCircle className="w-5 h-5 text-[#D98324] shrink-0 mt-0.5" strokeWidth={2.5} />
+            <div>
+              <p className="font-poppins font-black text-sm text-[#131010]">
+                Why 3+ players required?
+              </p>
+              <p className="font-poppins font-medium text-xs text-[#131010]/80 mt-0.5">
+                Standard competitive multiplayer requires at least 3 players to ensure fair and meaningful community voting without forced 1v1 mutual votes.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons Pinned to Bottom */}
         <div className="mt-6 sm:mt-8 pt-6 border-t-2 border-[#131010]/10 flex flex-col sm:flex-row justify-between items-center gap-4 animate-fade-in">
           {isHost ? (
@@ -495,11 +545,11 @@ const RoomLobby: React.FC = () => {
               </button>
 
               <button
-                disabled={!allReady || players.length < 2 || !isConnected}
+                disabled={!allReady || players.length < 3 || !isConnected}
                 onClick={() => setShowStartGameModal(true)}
                 className={`
                   w-full sm:w-auto flex items-center justify-center gap-2 px-10 py-3 rounded-lg border-2 font-poppins font-bold transition-all
-                  ${(!allReady || players.length < 2 || !isConnected) 
+                  ${(!allReady || players.length < 3 || !isConnected) 
                     ? 'bg-gray-200 border-gray-400 text-gray-500 cursor-not-allowed' 
                     : 'bg-[#5F8B4C] border-[#131010] text-white shadow-[4px_4px_0px_0px_#131010] hover:shadow-[6px_6px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none'
                   }
@@ -510,8 +560,8 @@ const RoomLobby: React.FC = () => {
                   ? 'Connecting...'
                   : !allReady
                   ? 'Waiting for players...'
-                  : players.length < 2
-                  ? 'Need 2+ Players'
+                  : players.length < 3
+                  ? 'Need 3+ Players'
                   : 'Start Game'}
               </button>
             </>
@@ -577,34 +627,6 @@ const RoomLobby: React.FC = () => {
         confirmColor="green"
       />
 
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .animate-fade-in { animation: fade-in 0.3s ease-out; }
-        .animate-fade-in-up { animation: fade-in-up 0.4s ease-out forwards; }
-
-        /* Custom thin scrollbar for Chat */
-        .custom-scroll::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scroll::-webkit-scrollbar-thumb {
-          background-color: #13101040;
-          border-radius: 10px;
-        }
-        .custom-scroll::-webkit-scrollbar-thumb:hover {
-          background-color: #13101080;
-        }
-      `}</style>
     </div>
   );
 };

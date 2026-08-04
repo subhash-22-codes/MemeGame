@@ -10,8 +10,9 @@ export type Player = {
   username: string;
   avatar?: string;
   score: number;
-  roundScores?: Array<{ round: number; score: number }>;
-  isJudge: boolean;
+  roundScores?: Array<{ round: number; score: number } | number>;
+  isJudge?: boolean;
+  isCreator?: boolean;
   isReady: boolean;
   isHost?: boolean;
   lastSeen?: Date;
@@ -27,19 +28,35 @@ export type Meme = {
 };
 
 export type MemeSubmission = {
-  playerId: string;
+  submissionId?: string;
+  playerId?: string;
   username?: string;
   avatar?: string;
   memeId: string;
   score?: number;
-  memeUrl?: string; 
+  memeUrl?: string;
+  title?: string;
+  votes?: Array<{ voterId: string; rating?: number; rank?: number }>;
+  roundScore?: number;
+  avgRating?: number;
+  rank1Count?: number;
+  rank2Count?: number;
+  rank3Count?: number;
+  isWinner?: boolean;
 };
 
 export type FinalResult = {
-  winner: { id: string; username?: string; score: number; avatar?: string };
+  winner?: { id: string; username?: string; score: number; avatar?: string };
+  winners?: Array<{ id: string; username?: string; score: number; avatar?: string }>;
   players: Array<{ id: string; username?: string; score: number; avatar?: string }>;
   totalRounds: number;
   completedAt?: string;
+  bestSubmission?: {
+    username: string;
+    memeUrl: string;
+    prompt: string;
+    score: number;
+  };
 };
 
 export type GameState = {
@@ -47,23 +64,33 @@ export type GameState = {
   host: { id: string };
   players: Player[];
   currentJudge?: Player;
+  promptCreator?: Player;
+  wheelSpinnerId?: string;
+  wheelSpun?: boolean;
+  spinStartTime?: number;
+  votedPlayerIds?: string[];
+  creatorOrder?: string[];
   currentSentence?: string;
   currentRound: number;
   totalRounds: number;
-  roundsPerJudge: number;
+  roundsPerJudge?: number;
   timerEndTime?: number;
   finalResult?: FinalResult;
   gamePhase:
     | 'lobby'
+    | 'promptSpinner'
     | 'judgeSelection'
     | 'sentenceCreation'
     | 'memeSelection'
+    | 'voting'
     | 'memeReveal'
     | 'scoring'
     | 'results'
     | 'finalResults';
   submissions: MemeSubmission[];
   availableMemes: Meme[]; // Now refers to the locally defined Meme type
+  rerollTokensUsed?: string[];
+  customPrompts?: string[];
   sessionId?: string;
 };
 
@@ -74,6 +101,7 @@ export interface ChatMessage {
   timestamp: number;
   userId: string;
   playerId: string;
+  type?: 'user' | 'system';
 }
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error';
@@ -89,19 +117,23 @@ type GameContextType = {
   gameState: GameState | null;
   isHost: boolean;
   isJudge: boolean;
+  isCreator: boolean;
   connectionState: ConnectionState;
   isRestoring: boolean; // For the reload bug
   
   // Emitters
-  createRoom: (settings: { rounds: number; roundsPerJudge: number }) => Promise<string>;
+  createRoom: (settings: { rounds: number; roundsPerJudge: number; customPrompts?: string[] }) => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => void;
   discardRoom: () => void;
   startGame: () => void;
+  spinWheel: () => void;
   selectJudge: (judgeId: string) => void;
   submitSentence: (sentence: string) => void;
   selectMeme: (memeId: string) => void;
+  submitCommunityVotes: (votes: Array<{ memeId: string; targetPlayerId: string; rating?: number; rank?: number }>) => void;
   scoreMeme: (playerId: string, score: number) => void;
+  rerollMemes: () => void;
   requestNextRound: () => void;
   sendChatMessage: (message: string) => void;
 
@@ -125,6 +157,7 @@ type GameAction =
   | { type: 'SET_CONNECTION_STATE'; payload: ConnectionState }
   | { type: 'SET_GAME_STATE'; payload: GameState | null }
   | { type: 'UPDATE_PLAYERS'; payload: Player[] }
+  | { type: 'UPDATE_MEMES'; payload: Meme[] }
   | { type: 'SET_TIMER'; payload: { endTime: string } }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'RESET_GAME' }
@@ -150,7 +183,8 @@ const gameReducer = (state: IContextState, action: GameAction): IContextState =>
       return { ...state, connectionState: action.payload };
     
     case 'SET_GAME_STATE': { // ⭐️ Added { block scope }
-      const preservedTimer = action.payload?.gamePhase === 'memeSelection' 
+      const isSamePhase = state.gameState?.gamePhase === action.payload?.gamePhase;
+      const preservedTimer = isSamePhase 
         ? state.gameState?.timerEndTime 
         : undefined;
 
@@ -166,6 +200,17 @@ const gameReducer = (state: IContextState, action: GameAction): IContextState =>
       return {
         ...state,
         gameState: { ...state.gameState, players: action.payload },
+      };
+
+    case 'UPDATE_MEMES':
+      if (!state.gameState) return state;
+      return {
+        ...state,
+        gameState: {
+          ...state.gameState,
+          availableMemes: action.payload,
+          rerollTokensUsed: [...(state.gameState.rerollTokensUsed || [])]
+        },
       };
 
     case 'SET_TIMER': { // ⭐️ Added { block scope }
@@ -222,6 +267,13 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const isJudge = useMemo(() => {
     if (!user || !state.gameState || !state.gameState.currentJudge) return false;
     return state.gameState.currentJudge.id === user.id;
+  }, [state.gameState, user]);
+
+  const isCreator = useMemo(() => {
+    if (!user || !state.gameState) return false;
+    const creator = state.gameState.promptCreator || state.gameState.currentJudge;
+    if (!creator) return false;
+    return creator.id === user.id;
   }, [state.gameState, user]);
 
 
@@ -282,12 +334,35 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     console.log('[SOCKET] Initializing connection...');
     dispatch({ type: 'SET_CONNECTION_STATE', payload: 'connecting' });
     
+    const token = localStorage.getItem('token');
     const newSocket = io(SOCKET_URL, {
+      auth: { token },
       forceNew: true,
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
     socketRef.current = newSocket;
+
+    const dispatchSystemMessage = (text: string) => {
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `sys_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          username: 'System',
+          message: text,
+          timestamp: Date.now(),
+          userId: 'system',
+          playerId: 'system',
+          type: 'system',
+        },
+      });
+    };
+
+    let prevPhase = '';
 
     // --- Core Connection Listeners ---
    newSocket.on('connect', () => {
@@ -324,11 +399,54 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       dispatch({ type: 'SET_RESTORING', payload: false }); // Stop restoring on error
     });
 
+    // --- Reconnection Resilience Listeners ---
+    newSocket.on('reconnect_attempt', (attempt) => {
+      console.log(`[SOCKET] Reconnection attempt #${attempt}...`);
+      dispatch({ type: 'SET_CONNECTION_STATE', payload: 'connecting' });
+    });
+
+    newSocket.on('reconnect', (attempt) => {
+      console.log(`[SOCKET] Reconnected after ${attempt} attempts`);
+      dispatch({ type: 'SET_CONNECTION_STATE', payload: 'connected' });
+      toast.success("Reconnected to server!");
+
+      const session = loadGameSession();
+      if (session && session.playerId === user.id) {
+        console.log('[SOCKET] Auto-rejoining Room after reconnect:', session.roomId);
+        newSocket.emit('rejoinRoom', {
+          roomId: session.roomId,
+          sessionId: session.sessionId,
+          userId: user.id
+        });
+      }
+    });
+
+    newSocket.on('reconnect_failed', () => {
+      console.error('[SOCKET] Reconnection failed completely');
+      dispatch({ type: 'SET_CONNECTION_STATE', payload: 'error' });
+      toast.error("Could not reconnect. Please reload the page.");
+    });
+
     // --- Global Error Handler ---
-    newSocket.on('error', (data: { error: string; code?: string }) => {
-      console.error(`[SOCKET] Server Error: ${data.error} (Code: ${data.code})`);
-      toast.error(data.error);
+    newSocket.on('error', (data: { error?: string; message?: string; code?: string }) => {
+      const errorMsg = data.error || data.message || "An unexpected error occurred.";
+      console.error(`[SOCKET] Server Error: ${errorMsg} (Code: ${data.code || 'UNKNOWN'})`);
       
+      // Provide user-friendly guidance based on error code
+      let displayMsg = errorMsg;
+      if (data.code === 'ROOM_FULL') {
+        displayMsg = "This room is already full (max 8 players).";
+      } else if (data.code === 'GAME_IN_PROGRESS') {
+        displayMsg = "A game is already in progress in this room. Try joining later!";
+      } else if (data.code === 'ROOM_NOT_FOUND') {
+        displayMsg = "Room not found. It may have expired or been closed.";
+      } else if (data.code === 'PLAYER_NOT_IN_ROOM') {
+        displayMsg = "You are no longer in this room.";
+      } else if (data.code === 'SERVER_ERROR') {
+        displayMsg = "An unexpected server error occurred. Please try again.";
+      }
+
+      toast.error(displayMsg);
       dispatch({ type: 'SET_RESTORING', payload: false }); // Stop restoring on error
 
       if (data.code === 'ROOM_NOT_FOUND' || data.code === 'PLAYER_NOT_IN_ROOM') {
@@ -353,6 +471,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     newSocket.on('playerJoined', (data: { players: Player[] }) => {
       console.log('[SOCKET] playerJoined');
       toast.success('A player joined the lobby!');
+      dispatchSystemMessage('A player joined the lobby!');
       dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
     });
 
@@ -362,6 +481,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       dispatch({ type: 'UPDATE_PLAYERS', payload: data.players });
 
       toast(`${data.leftPlayerId} left the room`);
+      dispatchSystemMessage(`${data.leftPlayerId} left the room`);
     });
         
     newSocket.on('playerDisconnected', (data: { players: Player[]; disconnectedPlayerId: string }) => {
@@ -384,6 +504,18 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     // --- THE *ONLY* GAME LOGIC LISTENER ---
     newSocket.on('gameStateUpdate', (newGameState: GameState) => {
       console.log(`[SOCKET] gameStateUpdate. New Phase: ${newGameState.gamePhase}`);
+      if (newGameState.gamePhase !== prevPhase) {
+        if (newGameState.gamePhase === 'sentenceCreation' && newGameState.currentJudge?.username) {
+          dispatchSystemMessage(`🎭 ${newGameState.currentJudge.username} is now the judge!`);
+        } else if (newGameState.gamePhase === 'memeSelection' && newGameState.currentSentence) {
+          dispatchSystemMessage(`🎯 Prompt locked in: "${newGameState.currentSentence}"`);
+        } else if (newGameState.gamePhase === 'memeReveal') {
+          dispatchSystemMessage(`🔥 All memes submitted! Time for scoring.`);
+        } else if (newGameState.gamePhase === 'results') {
+          dispatchSystemMessage(`🏆 Round ${newGameState.currentRound} complete!`);
+        }
+        prevPhase = newGameState.gamePhase;
+      }
       dispatch({ type: 'SET_GAME_STATE', payload: newGameState }); 
     });
     
@@ -391,6 +523,11 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       dispatch({ type: 'ADD_CHAT_MESSAGE', payload: message });
     });
     
+    newSocket.on('memesRerolled', (data: { memes: Meme[] }) => {
+      dispatch({ type: 'UPDATE_MEMES', payload: data.memes });
+      toast.success("🎲 New memes dealt!");
+    });
+
     newSocket.on('timerStarted', (data: { endTime: string }) => {
       console.log('[SOCKET] Timer started');
       dispatch({ type: 'SET_TIMER', payload: data });
@@ -424,7 +561,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   // 5. EMITTER FUNCTIONS (The "Mouth")
   // -------------------------------------------------------------------
 
-  const createRoom = (settings: { rounds: number; roundsPerJudge: number }): Promise<string> => {
+  const createRoom = (settings: { rounds: number; roundsPerJudge: number; customPrompts?: string[] }): Promise<string> => {
     return new Promise((resolve, reject) => {
       if (!user) return reject(new Error('User not authenticated'));
       
@@ -442,6 +579,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       safeEmit('createRoom', {
         rounds: settings.rounds,
         roundsPerJudge: settings.roundsPerJudge,
+        customPrompts: settings.customPrompts || [],
         host: { id: user.id, username: user.username, avatar: user.avatar },
       });
     });
@@ -494,6 +632,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   };
 
+  const spinWheel = () => {
+    if (state.gameState?.roomId) {
+      safeEmit('spinWheel', { roomId: state.gameState.roomId });
+    }
+  };
+
   const selectJudge = (judgeId: string) => {
     if (state.gameState?.roomId) {
       safeEmit('hostSelectsJudge', { roomId: state.gameState.roomId, judgeId });
@@ -512,9 +656,21 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   };
 
+  const submitCommunityVotes = (votes: Array<{ memeId: string; targetPlayerId: string; rating?: number; rank?: number }>) => {
+    if (state.gameState?.roomId) {
+      safeEmit('submitCommunityVotes', { roomId: state.gameState.roomId, votes });
+    }
+  };
+
   const scoreMeme = (playerId: string, score: number) => {
     if (state.gameState?.roomId) {
       safeEmit('scoreMeme', { roomId: state.gameState.roomId, playerId, score });
+    }
+  };
+
+  const rerollMemes = () => {
+    if (state.gameState?.roomId) {
+      safeEmit('rerollMemes', { roomId: state.gameState.roomId });
     }
   };
 
@@ -525,22 +681,13 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   };
 
   const sendChatMessage = (message: string) => {
-  if (state.gameState?.roomId && user) {
-    const chatPayload = {
-      id: `msg-${Date.now()}`,
-      username: user.username,
-      message,
-      timestamp: Date.now(),
-      userId: user.id,
-      playerId: user.id,
-    };
-    safeEmit('chatMessage', { 
-      roomId: state.gameState.roomId, 
-      message: chatPayload 
-    });
-    
-  }
-};
+    if (state.gameState?.roomId && user) {
+      safeEmit('chatMessage', { 
+        roomId: state.gameState.roomId, 
+        message: message 
+      });
+    }
+  };
 
   // -------------------------------------------------------------------
   // 6. CONTEXT VALUE & EXPORT
@@ -554,6 +701,7 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     isRestoring: state.isRestoring,
     isHost,
     isJudge,
+    isCreator,
     isConnected: state.connectionState === 'connected',
     socket: socketRef.current,
 
@@ -563,9 +711,12 @@ const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     leaveRoom,
     discardRoom,
     startGame,
+    spinWheel,
     selectJudge,
     submitSentence,
     selectMeme,
+    rerollMemes,
+    submitCommunityVotes,
     scoreMeme,
     requestNextRound,
     sendChatMessage,

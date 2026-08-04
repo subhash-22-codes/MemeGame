@@ -1,19 +1,71 @@
-import React, { useState } from 'react';
-import { Send, Gavel } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, Gavel, Shuffle, Sparkles } from 'lucide-react';
+import { useGame } from '../../context/GameContext';
 
-// Define the props that Game.tsx will pass to this component
 type SentenceInputProps = {
   onSubmit: (sentence: string) => void;
 };
 
+const SUGGESTED_PROMPTS = [
+  "When the WiFi drops in the middle of a ranked game...",
+  "POV: You showed your mom your search history",
+  "Me explaining why I need another pizza at 3 AM...",
+  "That one friend who always says 'trust me bro'...",
+  "When the meeting could have been an email...",
+  "How I look waiting for my package to arrive...",
+  "When you accidentally like a post from 3 years ago...",
+  "Me checking my bank account after a weekend out...",
+  "When someone asks if I'm ready for adulting...",
+  "That moment you realize you forgot to unmute on Zoom...",
+  "When the code compiles on the first try and you're scared...",
+  "Me trying to act normal in front of my crush...",
+  "When the boss says 'we're like a family here'...",
+  "How my dog looks when I ask 'who did this?'...",
+  "When you say 'just one episode' on a Sunday night..."
+];
+
+const getInterleavedPrompts = (customPrompts: string[], defaultPrompts: string[], count = 4): string[] => {
+  const shuffledCustom = [...customPrompts].sort(() => 0.5 - Math.random());
+  const shuffledDefault = [...defaultPrompts].sort(() => 0.5 - Math.random());
+  const result: string[] = [];
+  let cIdx = 0;
+  let dIdx = 0;
+
+  while (result.length < count && (cIdx < shuffledCustom.length || dIdx < shuffledDefault.length)) {
+    if (result.length % 2 === 0 && cIdx < shuffledCustom.length) {
+      result.push(shuffledCustom[cIdx++]);
+    } else if (dIdx < shuffledDefault.length) {
+      result.push(shuffledDefault[dIdx++]);
+    } else if (cIdx < shuffledCustom.length) {
+      result.push(shuffledCustom[cIdx++]);
+    } else {
+      break;
+    }
+  }
+  return result;
+};
+
 const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
+  const { gameState } = useGame();
+  const customPrompts = gameState?.customPrompts || [];
+
   const [sentence, setSentence] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>(() => 
+    getInterleavedPrompts(customPrompts, SUGGESTED_PROMPTS, 4)
+  );
+
+  useEffect(() => {
+    setSuggestions(getInterleavedPrompts(customPrompts, SUGGESTED_PROMPTS, 4));
+  }, [customPrompts.length]);
+
+  const handleShuffle = () => {
+    setSuggestions(getInterleavedPrompts(customPrompts, SUGGESTED_PROMPTS, 4));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (sentence.trim().length < 5) {
-      console.error("Sentence is too short");
       return;
     }
     
@@ -48,10 +100,49 @@ const SentenceInput: React.FC<SentenceInputProps> = ({ onSubmit }) => {
             placeholder="e.g., When the server crashes at 2 AM..."
             maxLength={150}
             disabled={isSubmitting}
-            className="w-full px-4 py-3 sm:py-3.5 text-[#131010] text-base sm:text-base font-semibold font-poppins bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl transition-shadow duration-200 focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010] disabled:opacity-50 placeholder:text-[#131010]/40 pr-16"
+            className="w-full px-4 py-3 sm:py-3.5 text-[#131010] text-base font-semibold font-poppins bg-[#FFDDAB]/20 border-2 border-[#131010] rounded-xl transition-shadow duration-200 focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010] disabled:opacity-50 placeholder:text-[#131010]/40 pr-16"
           />
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[10px] font-bold font-courier text-[#131010]/50 bg-white/80 px-2 py-1 rounded border border-[#131010]/10">
             {sentence.length}/150
+          </div>
+        </div>
+
+        {/* Prompt Suggestions Section */}
+        <div className="pt-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
+              <Sparkles className="w-3 h-3 text-[#D98324]" />
+              Need inspiration?
+            </span>
+            <button
+              type="button"
+              onClick={handleShuffle}
+              disabled={isSubmitting}
+              aria-label="Shuffle prompt suggestions"
+              className="inline-flex items-center gap-1 text-xs font-bold text-[#5F8B4C] hover:text-[#4A7039] transition-colors disabled:opacity-50"
+            >
+              <Shuffle className="w-3 h-3" />
+              Shuffle
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {suggestions.map((prompt, idx) => {
+              const isCustom = customPrompts.includes(prompt);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setSentence(prompt)}
+                  className={`text-left px-3 py-1.5 active:translate-y-[1px] border border-[#131010] rounded-lg text-xs font-poppins font-medium text-[#131010] shadow-[1px_1px_0px_0px_#131010] hover:shadow-[2px_2px_0px_0px_#131010] transition-all line-clamp-1 max-w-full flex items-center gap-1.5 ${
+                    isCustom ? 'bg-[#D98324]/20 hover:bg-[#D98324]/40 font-bold' : 'bg-[#FFDDAB]/30 hover:bg-[#FFDDAB]'
+                  }`}
+                >
+                  {isCustom && <span title="Squad Inside Joke">🃏</span>}
+                  <span>{prompt}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

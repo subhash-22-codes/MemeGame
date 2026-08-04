@@ -1,20 +1,65 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
+import GuestNameModal from '../components/GuestNameModal';
 import ConnectionStatus from '../components/ConnectionStatus';
 import { ArrowLeft, Users, Play, Info, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const JoinRoom: React.FC = () => {
-  // --- WIRING INTACT ---
-  const [roomCode, setRoomCode] = useState(['', '', '', '', '', '']);
+  const { roomCode: urlRoomCode } = useParams<{ roomCode?: string }>();
+  
+  const initialCode = (urlRoomCode || '').toUpperCase().slice(0, 6).split('');
+  while (initialCode.length < 6) initialCode.push('');
+
+  const [roomCode, setRoomCode] = useState(initialCode);
   const [isJoining, setIsJoining] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  const [pendingAutoJoin, setPendingAutoJoin] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { joinRoom, connectionState } = useGame();
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const autoJoinAttempted = useRef(false);
+
+  // Auto-join when arriving via invite link with a valid 6-char code
+  useEffect(() => {
+    if (autoJoinAttempted.current) return;
+    
+    if (urlRoomCode && urlRoomCode.length === 6) {
+      if (!isAuthenticated) {
+        // Need to login first — show guest modal
+        setShowGuestModal(true);
+        setPendingAutoJoin(true);
+        autoJoinAttempted.current = true;
+      } else if (connectionState === 'connected') {
+        autoJoinAttempted.current = true;
+        handleAutoJoin(urlRoomCode.toUpperCase());
+      }
+    }
+  }, [urlRoomCode, isAuthenticated, connectionState]);
+
+  // After guest login succeeds with a pending auto-join
+  useEffect(() => {
+    if (pendingAutoJoin && isAuthenticated && connectionState === 'connected' && urlRoomCode) {
+      setPendingAutoJoin(false);
+      handleAutoJoin(urlRoomCode.toUpperCase());
+    }
+  }, [pendingAutoJoin, isAuthenticated, connectionState]);
+
+  const handleAutoJoin = async (roomId: string) => {
+    setIsJoining(true);
+    try {
+      await joinRoom(roomId);
+      navigate(`/room/${roomId}`);
+    } catch (error) {
+      console.error('Auto-join failed:', error);
+      toast.error('Failed to join room. Please try entering the code manually.');
+      setIsJoining(false);
+    }
+  };
 
   const handleInputChange = (index: number, value: string) => {
     if (value.length > 1) return;
@@ -23,7 +68,6 @@ const JoinRoom: React.FC = () => {
     newCode[index] = value.toUpperCase();
     setRoomCode(newCode);
 
-    // Auto-focus next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -51,7 +95,6 @@ const JoinRoom: React.FC = () => {
     }
     setRoomCode(newCode);
     
-    // Focus the next empty input or the last one
     const nextEmptyIndex = newCode.findIndex(code => !code);
     const focusIndex = nextEmptyIndex === -1 ? 5 : Math.min(nextEmptyIndex, 5);
     inputRefs.current[focusIndex]?.focus();
@@ -63,24 +106,25 @@ const JoinRoom: React.FC = () => {
     const roomId = roomCode.join('');
     if (roomId.length !== 6) return;
     
+    if (!isAuthenticated) {
+      setShowGuestModal(true);
+      setPendingAutoJoin(true);
+      // Update the URL-style roomCode so auto-join picks it up
+      const newCode = roomId.split('');
+      setRoomCode(newCode);
+      return;
+    }
+
     setIsJoining(true);
     
     try {
-      console.log('[JOIN_ROOM] Attempting to join room:', roomId);
-      
-      // Check connection state
       if (connectionState !== 'connected') {
         toast.error('⚠️ Please wait for connection to establish...');
         setIsJoining(false);
         return;
       }
 
-      // Actually join the room using GameContext
       await joinRoom(roomId);
-      
-      console.log('[JOIN_ROOM] Successfully joined room:', roomId);
-      
-      // Navigate to the room lobby
       navigate(`/room/${roomId}`);
       
     } catch (error) {
@@ -90,24 +134,39 @@ const JoinRoom: React.FC = () => {
   };
 
   const isComplete = roomCode.every(code => code !== '');
-  // ---------------------
 
-  // --- Auth Blocked State (Matched to Create Room) ---
-  if (!user) {
+  // --- Auth Blocked State (only for manual /join without invite link) ---
+  if (!user && !urlRoomCode) {
     return (
       <div className="min-h-screen bg-[#FFDDAB] flex items-center justify-center p-4">
+        <GuestNameModal
+          isOpen={showGuestModal}
+          onClose={() => setShowGuestModal(false)}
+          onSuccess={() => {
+            setShowGuestModal(false);
+            toast.success('Welcome! Now enter the room code.');
+          }}
+        />
         <div className="bg-white rounded-xl border border-[#131010] shadow-[4px_4px_0px_0px_#131010] p-8 max-w-sm w-full text-center">
           <div className="w-14 h-14 bg-[#FFDDAB] border border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center mx-auto mb-5">
             <Lock className="w-6 h-6 text-[#131010]" strokeWidth={2.5} />
           </div>
           <h2 className="text-xl font-bold text-[#131010] font-poppins mb-2">Login Required</h2>
           <p className="text-[#131010]/70 text-sm font-poppins mb-6">You need to be logged in to join a game.</p>
-          <button
-            onClick={() => navigate('/login')}
-            className="w-full bg-[#5F8B4C] text-white py-3 px-6 rounded-lg font-bold font-poppins transition-all duration-200 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
-          >
-            Go to Login
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => setShowGuestModal(true)}
+              className="w-full bg-[#D98324] text-[#131010] py-3 px-6 rounded-lg font-bold font-poppins transition-all duration-200 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
+            >
+              Play as Guest
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-[#5F8B4C] text-white py-3 px-6 rounded-lg font-bold font-poppins transition-all duration-200 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] active:translate-y-[2px] active:shadow-none"
+            >
+              Go to Login
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -117,16 +176,29 @@ const JoinRoom: React.FC = () => {
     <div className="min-h-screen bg-[#FFDDAB] py-6 sm:py-10 px-4 sm:px-6 lg:px-8">
       <ConnectionStatus />
       
+      {/* Guest Modal for invite-link flow */}
+      <GuestNameModal
+        isOpen={showGuestModal}
+        onClose={() => {
+          setShowGuestModal(false);
+          setPendingAutoJoin(false);
+        }}
+        onSuccess={() => {
+          setShowGuestModal(false);
+          toast.success('Welcome! Joining the room...');
+        }}
+      />
+      
       <div className="max-w-6xl mx-auto">
         
-        {/* Header Section (Consistently placed matching Create Room) */}
+        {/* Header Section */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-in">
           <div>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(isAuthenticated ? '/dashboard' : '/')}
               className="inline-flex items-center text-[#131010]/60 hover:text-[#131010] transition-colors font-bold text-xs uppercase tracking-wider font-courier mb-3 sm:mb-4"
             >
-              <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> Back to Dashboard
+              <ArrowLeft size={14} className="mr-1" strokeWidth={3} /> {isAuthenticated ? 'Back to Dashboard' : 'Back to Home'}
             </button>
             <h1 className="text-3xl sm:text-4xl font-black text-[#131010] font-poppins tracking-tight leading-none">
               Join a Game
@@ -134,13 +206,13 @@ const JoinRoom: React.FC = () => {
           </div>
         </div>
 
-        {/* The Layout Grid (F-Pattern matching Create Room) */}
+        {/* The Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-fade-in-up">
           
-          {/* LEFT COLUMN: The Action (Takes up 8 columns on desktop) */}
+          {/* LEFT COLUMN: The Action */}
           <div className="lg:col-span-8 flex flex-col gap-5">
             
-            {/* Bento Box 1: Code Input */}
+            {/* Bento Box: Code Input */}
             <div className="bg-white rounded-xl p-5 sm:p-8 border border-[#131010] shadow-[3px_3px_0px_0px_#131010]">
               <div className="flex items-center gap-3 mb-6 sm:mb-8">
                 <div className="w-12 h-12 bg-[#FFDDAB] border border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-xl flex items-center justify-center">
@@ -154,7 +226,7 @@ const JoinRoom: React.FC = () => {
 
               <form onSubmit={handleJoin} className="space-y-8">
                 <div className="flex flex-col items-center">
-                  {/* The 6 Input Boxes (Keycap Style) */}
+                  {/* The 6 Input Boxes */}
                   <div className="flex gap-2 sm:gap-3 justify-center w-full max-w-md">
                     {roomCode.map((digit, index) => (
                       <input
@@ -207,7 +279,7 @@ const JoinRoom: React.FC = () => {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: The Guide (Takes up 4 columns on desktop, stacks on mobile) */}
+          {/* RIGHT COLUMN: The Guide */}
           <div className="lg:col-span-4 flex flex-col gap-5">
             <div className="bg-white rounded-xl p-5 sm:p-6 border border-[#131010] shadow-[3px_3px_0px_0px_#131010] sticky top-6">
               <div className="flex items-center gap-2 mb-6">
@@ -215,7 +287,6 @@ const JoinRoom: React.FC = () => {
                 <h2 className="font-poppins font-bold text-lg text-[#131010]">How to Play</h2>
               </div>
 
-              {/* Simple, Human Steps */}
               <div className="space-y-5 mb-6">
                 {[
                   {
@@ -246,40 +317,22 @@ const JoinRoom: React.FC = () => {
                 ))}
               </div>
 
-              {/* Player Tag (Friendly Reminder) */}
-              <div className="pt-5 border-t border-[#131010]/10 flex items-center justify-center">
-                <div className="inline-flex items-center gap-2 bg-[#FFDDAB]/20 px-4 py-2 rounded-lg border border-[#131010] shadow-[1px_1px_0px_0px_#131010]">
-                  <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse" />
-                  <p className="font-courier text-xs font-bold text-[#131010]/70 uppercase tracking-widest">
-                    Playing as <span className="text-[#5F8B4C]">{user?.username || 'Player'}</span>
-                  </p>
+              {/* Player Tag */}
+              {user && (
+                <div className="pt-5 border-t border-[#131010]/10 flex items-center justify-center">
+                  <div className="inline-flex items-center gap-2 bg-[#FFDDAB]/20 px-4 py-2 rounded-lg border border-[#131010] shadow-[1px_1px_0px_0px_#131010]">
+                    <div className="w-2 h-2 bg-[#5F8B4C] rounded-full animate-pulse" />
+                    <p className="font-courier text-xs font-bold text-[#131010]/70 uppercase tracking-widest">
+                      Playing as <span className="text-[#5F8B4C]">{user?.username || 'Player'}</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>
-
         </div>
       </div>
-      
-      {/* Custom Animations to Match CreateRoom */}
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        .animate-fade-in-up {
-          animation: fade-in-up 0.4s ease-out forwards;
-        }
-      `}</style>
     </div>
   );
 };

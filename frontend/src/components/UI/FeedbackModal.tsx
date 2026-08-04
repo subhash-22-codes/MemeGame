@@ -23,10 +23,12 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({ onClose }) => {
 
     setLoading(true);
 
+    const token = localStorage.getItem("token") || "";
     const res = await fetch(`${API_URL}/api/feedback`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
       },
       body: JSON.stringify({
         rating,

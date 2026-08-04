@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { CheckCircle, Hourglass, MessageSquare } from 'lucide-react';
 // ⭐️ FIX: Import useGame to get the memes from the server
 import { useGame } from '../../context/GameContext'; 
+import { useAuth } from '../../context/AuthContext';
 
 // Define the props that Game.tsx will pass
 type MemeSelectionProps = {
@@ -21,10 +22,13 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
   
   // ⭐️ FIX: Get the 10 random memes from the game state
   // This list comes directly from your Python GIPHY function
-  const { gameState } = useGame();
+  const { gameState, rerollMemes } = useGame();
+  const { user } = useAuth();
   const visibleMemes = gameState?.availableMemes || [];
+  const hasRerolled = Boolean(user?.id && gameState?.rerollTokensUsed?.includes(user.id));
 
   const handleSelect = (memeId: string) => {
+    if (isSubmitted || selectedId) return;
     setSelectedId(memeId);
     onSelect(memeId);
   };
@@ -56,8 +60,21 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
       
       {/* 1. The Sentence Prompt (Bento Card) */}
       <div className="sticky top-0 z-30 bg-white rounded-2xl p-4 sm:p-6 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] mb-6 sm:mb-8 text-center relative">
-        <div className="inline-flex items-center gap-1.5 bg-[#FFDDAB] px-3 py-1 rounded-md border border-[#131010] font-black text-[10px] text-[#131010] uppercase tracking-widest mb-3">
-          <MessageSquare className="w-3 h-3" strokeWidth={3} /> The Prompt
+        <div className="flex items-center justify-between mb-3 px-2">
+          <div className="inline-flex items-center gap-1.5 bg-[#FFDDAB] px-3 py-1 rounded-md border border-[#131010] font-black text-[10px] text-[#131010] uppercase tracking-widest">
+            <MessageSquare className="w-3 h-3" strokeWidth={3} /> The Prompt
+          </div>
+          <button
+            onClick={rerollMemes}
+            disabled={hasRerolled || Boolean(selectedId)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md border-2 border-[#131010] font-black text-xs font-poppins transition-all ${
+              hasRerolled || Boolean(selectedId)
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-gray-400 shadow-none'
+                : 'bg-[#D98324] text-white shadow-[2px_2px_0px_0px_#131010] hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_0px_#131010] active:translate-y-0'
+            }`}
+          >
+            🎲 {hasRerolled ? 'Rerolled (0 Left)' : 'Reroll Hand (1 Left)'}
+          </button>
         </div>
         <p className="text-base sm:text-xl md:text-2xl font-black text-[#131010] font-poppins leading-tight px-2">
           "{sentence}"
@@ -75,6 +92,7 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
               key={meme.id}
               onClick={() => handleSelect(meme.id)}
               disabled={selectedId !== null}
+              aria-label={meme.title || 'Select meme'}
               className={`
                 group relative rounded-xl overflow-hidden border-2 transition-all duration-200 aspect-square w-full
                 ${isSelected 
@@ -103,15 +121,6 @@ const MemeSelection: React.FC<MemeSelectionProps> = ({
           )
         })}
       </div>
-      
-      {/* Custom Keyframe for smooth pop-ins */}
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(5px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
-      `}</style>
     </div>
   );
 };

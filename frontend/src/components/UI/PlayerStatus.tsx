@@ -1,11 +1,11 @@
 import React from 'react';
 import { Check, Clock, Gavel, Users } from 'lucide-react';
-import { Player } from '../../context/GameContext';
+import { Player, MemeSubmission } from '../../context/GameContext';
 
 interface PlayerStatusProps {
   players: Player[];
   currentJudge?: Player;
-  submissions: { playerId: string; memeId: string; score?: number }[];
+  submissions: MemeSubmission[];
   showSubmissionStatus?: boolean;
 }
 
@@ -115,16 +115,6 @@ const PlayerStatus: React.FC<PlayerStatusProps> = ({
           );
         })}
       </div>
-
-      <style>{`
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow {
-          animation: spin-slow 3s linear infinite;
-        }
-      `}</style>
     </div>
   );
 };

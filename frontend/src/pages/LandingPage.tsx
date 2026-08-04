@@ -19,11 +19,13 @@ import {
   Lock,
   User,
   BookOpen,
-  Gavel
+  Gavel,
+  Zap
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import gaybroImg from '../images/gaybro.jpg';
-import gaybriImg2 from '../images/gaybro2.jpg';
+import GuestNameModal from '../components/GuestNameModal';
+import gaybroImg from '../images/gaybro.webp';
+import gaybriImg2 from '../images/gaybro2.webp';
 import toast from 'react-hot-toast';
 import axios from "axios";
 
@@ -160,6 +162,7 @@ const Input: React.FC<InputProps> = ({
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthenticated, login, register, loading, verifyOtp } = useAuth();
+  const [showGuestModal, setShowGuestModal] = useState(false);
   
   const [showLogin, setShowLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -247,6 +250,15 @@ const LandingPage: React.FC = () => {
   
   return (
     <>
+      <GuestNameModal
+        isOpen={showGuestModal}
+        onClose={() => setShowGuestModal(false)}
+        onSuccess={() => {
+          setShowGuestModal(false);
+          toast.success('Welcome to MemeGame!');
+          navigate('/dashboard');
+        }}
+      />
       <div className="min-h-screen flex flex-col bg-[#FFDDAB] font-poppins selection:bg-[#D98324] selection:text-white">
         
         {/* HERO SECTION */}
@@ -295,14 +307,24 @@ const LandingPage: React.FC = () => {
                   </Button>
 
                   {!isAuthenticated && (
-                    <Button 
-                      variant="outline" 
-                      size="lg"
-                      onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
-                      icon={<LogIn strokeWidth={3} />}
-                    >
-                      Sign In to Play
-                    </Button>
+                    <>
+                      <Button 
+                        variant="secondary" 
+                        size="lg"
+                        onClick={() => setShowGuestModal(true)}
+                        icon={<Zap strokeWidth={3} />}
+                      >
+                        Play as Guest
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="lg"
+                        onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
+                        icon={<LogIn strokeWidth={3} />}
+                      >
+                        Sign In to Play
+                      </Button>
+                    </>
                   )}
                 </div>
               </motion.div>

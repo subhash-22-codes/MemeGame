@@ -207,10 +207,10 @@ const HowToPlay: React.FC = () => {
           transition={{ delay: 0.2, duration: 0.5 }}
         >
           {[
-            { icon: Users, color: 'bg-[#5F8B4C]', img: 'JS.png' },
-            { icon: Gamepad, color: 'bg-[#D98324]', img: 'chat.png' },
-            { icon: Timer, color: 'bg-[#131010]', img: 'memetime.png' },
-            { icon: Trophy, color: 'bg-[#FFDDAB]', img: 'winner.png', iconColor: 'text-[#131010]' }
+            { icon: Users, color: 'bg-[#5F8B4C]', img: 'JS.webp' },
+            { icon: Gamepad, color: 'bg-[#D98324]', img: 'chat.webp' },
+            { icon: Timer, color: 'bg-[#131010]', img: 'memetime.webp' },
+            { icon: Trophy, color: 'bg-[#FFDDAB]', img: 'winner.webp', iconColor: 'text-[#131010]' }
           ].map((item, i) => (
             <div key={i} className="relative overflow-hidden rounded-xl aspect-square border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] group">
               <img src={item.img} alt="Preview" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />

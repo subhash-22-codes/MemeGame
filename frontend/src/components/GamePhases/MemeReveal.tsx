@@ -87,17 +87,31 @@ const MemeGallery: React.FC<MemeGalleryProps> = ({
 
           {/* Judge scoring */}
           {isJudge && !hasBeenScored && (
-            <div className="pt-2 border-t border-[#131010]/10">
-              <div className="grid grid-cols-5 gap-1">
-                {[1,2,3,4,5,6,7,8,9,10].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => onScore(submission.playerId, s)}
-                    className="py-1 text-[10px] font-black font-poppins bg-white border-2 border-[#131010] rounded-md text-[#131010] shadow-[1.5px_1.5px_0px_0px_#131010] hover:bg-[#FFDDAB] active:translate-y-[1px] active:shadow-none transition-all"
-                  >
-                    {s}
-                  </button>
-                ))}
+            <div className="pt-2.5 border-t-2 border-[#131010]/10 mt-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black font-courier text-[#131010]/60 uppercase tracking-wider">
+                  RATE THIS MEME
+                </span>
+                <span className="text-[9px] font-bold font-courier text-[#131010]/40">
+                  1 (MEH) → 10 (FIRE)
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => {
+                  let hoverStyle = 'hover:bg-[#FFDDAB] hover:text-[#131010]';
+                  if (s <= 3) hoverStyle = 'hover:bg-orange-200 hover:text-orange-950';
+                  else if (s >= 8) hoverStyle = 'hover:bg-[#5F8B4C] hover:text-white';
+
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => onScore(submission.playerId, s)}
+                      className={`py-2 text-xs sm:text-sm font-black font-poppins bg-white border-2 border-[#131010] rounded-lg text-[#131010] shadow-[2px_2px_0px_0px_#131010] ${hoverStyle} active:translate-y-[2px] active:shadow-none transition-all`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

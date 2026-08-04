@@ -258,7 +258,7 @@ const ForgetPasswordPage: React.FC = () => {
           >
             <div className="bg-white p-4 rounded-3xl border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010] inline-block transform rotate-3 hover:rotate-6 transition-transform">
               <img 
-                src='/forget.png' 
+                src='/forget.webp' 
                 alt="Security Illustration" 
                 className="w-48 h-48 lg:w-64 lg:h-64 object-cover rounded-xl border-2 border-[#131010]"
               />

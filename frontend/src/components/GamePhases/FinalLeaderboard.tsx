@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { Player } from '../../context/GameContext';
 import { Trophy, RefreshCcw, Home, Crown, Medal } from 'lucide-react';
+import MemeOfTheMatchCard, { BestSubmission } from '../UI/MemeOfTheMatchCard';
 
 // Define the props Game.tsx will pass
 type FinalLeaderboardProps = {
@@ -9,6 +10,7 @@ type FinalLeaderboardProps = {
   isHost: boolean;
   onPlayAgain: () => void; // Function to restart the game
   onBackToLobby: () => void; // Function to go to dashboard/lobby
+  bestSubmission?: BestSubmission;
 };
 
 const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
@@ -17,6 +19,7 @@ const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
   isHost,
   onPlayAgain,
   onBackToLobby,
+  bestSubmission,
 }) => {
   // Sort players by their final score
   const sortedPlayers = useMemo(() => 
@@ -75,6 +78,9 @@ const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Meme of the Match Card */}
+      {bestSubmission && <MemeOfTheMatchCard bestSubmission={bestSubmission} />}
 
       {/* 2. Final Leaderboard Plaque (Tactile Rows) */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] mb-8">
@@ -156,14 +162,6 @@ const FinalLeaderboard: React.FC<FinalLeaderboardProps> = ({
           Lobby
         </button>
       </div>
-
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
-      `}</style>
     </div>
   );
 };
