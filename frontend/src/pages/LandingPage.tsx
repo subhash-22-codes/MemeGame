@@ -8,16 +8,10 @@ import {
   UserCircle2, 
   LogIn, 
   Star, 
-  Eye, 
-  EyeOff,
   Linkedin,
   Twitter,
   Instagram,
   Github,
-  AlertCircle,
-  Mail,
-  Lock,
-  User,
   BookOpen,
   Gavel,
   Zap
@@ -27,7 +21,8 @@ import GuestNameModal from '../components/GuestNameModal';
 import gaybroImg from '../images/gaybro.webp';
 import gaybriImg2 from '../images/gaybro2.webp';
 import toast from 'react-hot-toast';
-import axios from "axios";
+import AuthModal from '../components/AuthModal';
+
 
 // --- Tactile Button Component ---
 interface ButtonProps {
@@ -85,179 +80,30 @@ const Button: React.FC<ButtonProps> = ({
     </button>
   );
 };
-
-// --- Tactile Input Component ---
-interface InputProps {
-  id: string;
-  type: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-  required?: boolean;
-  icon?: React.ReactNode;
-  error?: string;
-  label: string;
-}
-
-const Input: React.FC<InputProps> = ({
-  id,
-  type,
-  value,
-  onChange,
-  placeholder,
-  required,
-  icon,
-  error,
-  label
-}) => {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
-        {label}
-      </label>
-      <div className="relative">
-        {icon && (
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center z-10 pointer-events-none">
-            {React.cloneElement(icon as React.ReactElement, {
-              className: 'text-[#131010] w-5 h-5',
-              strokeWidth: 2.5
-            })}
-          </div>
-        )}
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={onChange}
-          required={required}
-          placeholder={placeholder}
-          className={`
-            w-full px-4 py-3.5 ${icon ? 'pl-12' : ''} 
-            bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-semibold
-            border-2 rounded-xl transition-shadow duration-200
-            focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
-            placeholder:text-[#131010]/30 placeholder:font-medium
-            ${error ? 'border-red-500 bg-red-50/50' : 'border-[#131010]'}
-          `}
-        />
-      </div>
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="flex items-center text-red-600 text-xs font-bold font-poppins mt-1"
-          >
-            <AlertCircle size={14} className="mr-1" strokeWidth={2.5} />
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 // --- Main Landing Page ---
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { isAuthenticated, login, register, loading, verifyOtp } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [showGuestModal, setShowGuestModal] = useState(false);
   
-  const [showLogin, setShowLogin] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [defaultIsRegister, setDefaultIsRegister] = useState(false);
 
   useEffect(() => {
     if (searchParams.get('register') === 'true') {
-      setShowLogin(false);
+      setDefaultIsRegister(true);
+      setShowAuthModal(true);
     }
   }, [searchParams]);
 
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [awaitingOtp, setAwaitingOtp] = useState(false);
-  const [otp, setOtp] = useState('');
-  
-  // Form validation (Untouched logic)
-  const validateForm = () => {
-    const errors: Record<string, string> = {};
-
-    if (!showLogin && !username.trim()) {
-      errors.username = 'Username is required';
-      toast.error('Username is required.');
-    } else if (!showLogin && username.length < 3) {
-      errors.username = 'Username must be at least 3 characters';
-      toast.error('Username must be at least 3 characters.');
-    }
-
-    if (!email.trim()) {
-      errors.email = 'Email is required';
-      toast.error('Email is required.');
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = 'Please enter a valid email address';
-      toast.error('Invalid email format.');
-    }
-
-    if (!password.trim()) {
-      errors.password = 'Password is required';
-      toast.error('Password is required.');
-    } else if (password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
-      toast.error('Password must be at least 6 characters.');
-    }
-
-    setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
- const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
-
-  if (!awaitingOtp && !validateForm()) return;
-
-  try {
-    if (awaitingOtp) {
-      await verifyOtp({ email, otp, purpose: 'register', username, password });
-      toast.success('Account created successfully. Welcome to MemeGame!');
-      navigate('/dashboard');
-      return;
-    }
-
-    if (showLogin) {
-      await login(email, password);
-      toast.success('Welcome back to MemeGame!');
-      navigate('/dashboard');
-    } else {
-      await register(username, email, password);
-      setAwaitingOtp(true);
-      toast.success('Signup OTP sent to your email');
-    }
-
-    } catch (err: unknown) {
-      console.error("Authentication error:", err);
-
-      let message = "Something went wrong. Please try again.";
-
-      if (axios.isAxiosError(err)) {
-        message =
-          err.response?.data?.error ||
-          err.response?.data?.message ||
-          message;
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
-
-      toast.error(message);
-    }
-};
-  
   return (
     <>
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+        defaultIsRegister={defaultIsRegister} 
+      />
       <GuestNameModal
         isOpen={showGuestModal}
         onClose={() => setShowGuestModal(false)}
@@ -327,7 +173,10 @@ const LandingPage: React.FC = () => {
                       <Button 
                         variant="outline" 
                         size="lg"
-                        onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
+                        onClick={() => {
+                          setDefaultIsRegister(false);
+                          setShowAuthModal(true);
+                        }}
                         icon={<LogIn strokeWidth={3} />}
                       >
                         Sign In to Party
@@ -427,193 +276,6 @@ const LandingPage: React.FC = () => {
           </div>
         </div>
         
-        {/* AUTH SECTION */}
-        {!isAuthenticated && (
-          <div id="auth-section" className="bg-[#FFDDAB] py-24 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md mx-auto">
-              <motion.div 
-                className="bg-white rounded-3xl shadow-[8px_8px_0px_0px_#131010] border-4 border-[#131010] overflow-hidden"
-                initial={{ opacity: 0, y: 40 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                viewport={{ once: true }}
-              >
-                {/* Auth Header */}
-                <div className="bg-[#131010] text-center py-8 px-6">
-                  <motion.h2 
-                    className="text-3xl font-black text-white"
-                    key={showLogin ? 'login' : 'signup'}
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    {showLogin ? 'Welcome Back' : 'Join the Lobby'}
-                  </motion.h2>
-                  <p className="text-white/60 font-medium mt-2 text-sm">
-                    {showLogin ? 'Sign in to access your stats and games.' : 'Create a profile to start playing.'}
-                  </p>
-                </div>
-                
-                <div className="p-6 sm:p-8">
-                  {error && (
-                    <motion.div 
-                      className="bg-red-50 border-2 border-red-500 text-red-700 px-4 py-3 rounded-xl mb-6 flex items-center font-bold text-sm"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                    >
-                      <AlertCircle size={20} className="mr-2 shrink-0" strokeWidth={2.5} />
-                      {error}
-                    </motion.div>
-                  )}
-                  
-                  <form onSubmit={handleSubmit} className="space-y-5">
-                    <AnimatePresence mode="wait">
-                      {!showLogin && !awaitingOtp && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          <Input
-                            id="username"
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            label="Username"
-                            placeholder="Player123"
-                            required
-                            icon={<User size={20} />}
-                            error={fieldErrors.username}
-                          />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    
-                    {!awaitingOtp && (
-                      <Input
-                        id="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        label="Email Address"
-                        placeholder="you@example.com"
-                        required
-                        icon={<Mail size={20} />}
-                        error={fieldErrors.email}
-                      />
-                    )}
-                    
-                    {!awaitingOtp && (
-                      <div className="space-y-1.5">
-                        <label htmlFor="password" className="block text-xs font-bold text-[#131010]/60 uppercase tracking-wider font-courier">
-                          Password
-                        </label>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 flex items-center pl-4 z-10 pointer-events-none">
-                            <Lock size={20} className="text-[#131010]" strokeWidth={2.5} />
-                          </div>
-                          <input
-                            id="password"
-                            type={showPassword ? 'text' : 'password'}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            placeholder="••••••••"
-                            className={`
-                              w-full px-4 py-3.5 pl-12 pr-12
-                              bg-[#FFDDAB]/10 text-[#131010] text-base sm:text-sm font-poppins font-semibold
-                              border-2 rounded-xl transition-shadow duration-200
-                              focus:outline-none focus:bg-white focus:shadow-[2px_2px_0px_0px_#131010]
-                              placeholder:text-[#131010]/30 placeholder:font-medium
-                              ${fieldErrors.password ? 'border-red-500 bg-red-50/50' : 'border-[#131010]'}
-                            `}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute inset-y-0 right-4 flex items-center text-[#131010]/40 hover:text-[#131010] transition-colors"
-                          >
-                            {showPassword ? <Eye size={20} strokeWidth={2.5} /> : <EyeOff size={20} strokeWidth={2.5} />}
-                          </button>
-                        </div>
-                        <AnimatePresence>
-                          {fieldErrors.password && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -5 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -5 }}
-                              className="flex items-center text-red-600 text-xs font-bold font-poppins mt-1"
-                            >
-                              <AlertCircle size={14} className="mr-1" strokeWidth={2.5} />
-                              {fieldErrors.password}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        {showLogin && (
-                          <div className="mt-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => navigate('/forgot-password')}
-                              className="text-xs font-bold text-[#5F8B4C] hover:text-[#131010] transition-colors uppercase tracking-wider font-courier"
-                            >
-                              Forgot Password?
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {awaitingOtp && (
-                      <Input
-                        id="otp"
-                        type="text"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
-                        label="Enter Verification Code"
-                        placeholder="6-digit code"
-                        required
-                        icon={<Lock size={20} />}
-                      />
-                    )}
-                    
-                    <div className="pt-4">
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        size="lg"
-                        fullWidth
-                        loading={loading}
-                        icon={awaitingOtp ? <Lock size={20} strokeWidth={3} /> : (showLogin ? <LogIn size={20} strokeWidth={3} /> : <UserCircle2 size={20} strokeWidth={3} />)}
-                      >
-                        {awaitingOtp ? 'Verify Code' : (showLogin ? 'Enter Game' : 'Create Profile')}
-                      </Button>
-                    </div>
-                  </form>
-                  
-                  <div className="mt-8 pt-6 border-t-2 border-[#131010]/10 text-center">
-                    <p className="text-sm font-medium text-[#131010]/60 mb-3">
-                      {showLogin ? "New around here?" : "Already have a profile?"}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowLogin(!showLogin);
-                        setFieldErrors({});
-                        setError('');
-                        setAwaitingOtp(false);
-                        setOtp('');
-                      }}
-                      className="text-sm font-black text-[#D98324] hover:text-[#131010] transition-colors uppercase tracking-widest border-b-2 border-transparent hover:border-[#131010] pb-1"
-                    >
-                      {showLogin ? "Create an Account" : "Sign In Instead"}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        )}
         
         {/* FOOTER */}
         <footer className="bg-[#131010] py-12 px-4 mt-auto">

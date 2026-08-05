@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
 import { toast } from 'react-hot-toast';
+import AuthModal from '../components/AuthModal';
 
 // --- Types for our Live Data ---
 interface DashboardStats {
@@ -129,6 +130,7 @@ const Dashboard: React.FC = () => {
   const { joinRoom } = useGame();
 
   const [loading, setLoading] = useState(!isGuest);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     totalGames: 0,
     gamesHosted: 0,
@@ -226,6 +228,11 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FFDDAB] py-6 sm:py-8 px-4 sm:px-6 lg:px-8">
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+        defaultIsRegister={true} 
+      />
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -485,7 +492,7 @@ const Dashboard: React.FC = () => {
                   variant="secondary"
                   icon={<UserPlus size={16} strokeWidth={2.5} />}
                   onClick={() => {
-                    navigate('/?register=true');
+                    setShowAuthModal(true);
                   }}
                   className="w-full sm:w-auto"
                 >
