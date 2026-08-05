@@ -206,6 +206,7 @@ const Game: React.FC = () => {
   const getPhaseTitle = () => {
     switch (gamePhase) {
       case 'promptSpinner': return 'Prompt Creator Selection';
+      case 'roundTransition': return 'Round Intro';
       case 'sentenceCreation': return 'Creating Sentence';
       case 'memeSelection': return 'Selecting Memes';
       case 'voting': return 'Community Voting';
@@ -219,6 +220,9 @@ const Game: React.FC = () => {
 
 
   const getPhaseDescription = () => {
+    if (gamePhase === 'roundTransition') {
+      return 'Get ready...';
+    }
     if (gamePhase === 'promptSpinner') {
       return 'Spinning the wheel to select who creates the next prompt!';
     }
@@ -397,6 +401,24 @@ const Game: React.FC = () => {
                 <span className="inline-block bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] px-4 py-1.5 rounded-full font-bold text-xs text-[#131010]">
                   {getPhaseDescription()}
                 </span>
+              </div>
+            )}
+
+            {/* ROUND TRANSITION VIEW */}
+            {gamePhase === 'roundTransition' && (
+              <div className="bg-white rounded-3xl p-8 sm:p-12 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010] text-center max-w-lg mx-auto my-10 animate-fade-in-up">
+                {gameState.currentRound === gameState.totalRounds ? (
+                  <>
+                    <div className="text-6xl mb-4">🔥</div>
+                    <h1 className="text-4xl sm:text-5xl font-black text-[#D98324] mb-2 tracking-tight">FINAL ROUND</h1>
+                    <p className="text-[#131010]/70 font-bold text-lg">This is your last chance. Make it count!</p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className="text-4xl sm:text-5xl font-black text-[#131010] mb-2 tracking-tight">ROUND {gameState.currentRound}</h1>
+                    <p className="text-[#131010]/70 font-bold text-lg">Get ready to meme...</p>
+                  </>
+                )}
               </div>
             )}
 

@@ -27,9 +27,17 @@ const Results: React.FC<ResultsProps> = ({
 }) => {
   // Sort players by total score for the leaderboard
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+  const [viewScoreboard, setViewScoreboard] = React.useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setViewScoreboard(true), 6000);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="max-w-md md:max-w-4xl mx-auto w-full animate-fade-in-up">
+      {!viewScoreboard ? (
+        <div className="space-y-6">
 
       {/* 1. Round Winner Card (Compact Bento) */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] text-center mb-6 relative overflow-hidden">
@@ -88,7 +96,7 @@ const Results: React.FC<ResultsProps> = ({
                     <img src={sub.memeUrl} alt="Meme" className="w-full h-full object-cover" />
                     {isWin && (
                       <div className="absolute top-2 right-2 bg-[#D98324] text-[#131010] px-2.5 py-1 rounded-lg border-2 border-[#131010] font-black text-xs flex items-center gap-1 shadow-[2px_2px_0px_0px_#131010]">
-                        <Crown className="w-3.5 h-3.5" /> +15 BONUS
+                        <Crown className="w-3.5 h-3.5" /> +5 BONUS
                       </div>
                     )}
                   </div>
@@ -110,18 +118,22 @@ const Results: React.FC<ResultsProps> = ({
                     </div>
 
                     {/* Scorecard Bar: Breakdown of 1st, 2nd, 3rd place votes */}
-                    <div className="grid grid-cols-3 gap-1 bg-[#131010]/5 p-1.5 rounded-lg border border-[#131010]/20 text-center font-poppins font-bold text-xs">
-                      <div className="flex items-center justify-center gap-1 bg-white py-1 rounded border border-[#131010]/20 shadow-sm">
-                        <span>🥇</span>
-                        <span className="text-[#131010] font-black">{sub.rank1Count || 0}</span>
+                    <div className="flex flex-col gap-1.5 bg-[#131010]/5 p-2 rounded-lg border border-[#131010]/20 font-poppins text-xs">
+                      <div className="flex justify-between items-center bg-white px-2 py-1 rounded border border-[#131010]/20 shadow-sm">
+                        <span className="font-bold text-[#131010]/60">Community Score:</span>
+                        <div className="flex gap-2 font-black text-[#131010]">
+                           <span title="1st Place (5pts)">🥇x{sub.rank1Count || 0}</span>
+                           <span title="2nd Place (3pts)">🥈x{sub.rank2Count || 0}</span>
+                           <span title="3rd Place (1pt)">🥉x{sub.rank3Count || 0}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-center gap-1 bg-white py-1 rounded border border-[#131010]/20 shadow-sm">
-                        <span>🥈</span>
-                        <span className="text-[#131010] font-black">{sub.rank2Count || 0}</span>
+                      <div className="flex justify-between items-center bg-white px-2 py-1 rounded border border-[#131010]/20 shadow-sm">
+                        <span className="font-bold text-[#131010]/60">MVP Bonus:</span>
+                        <span className="font-black text-[#D98324]">{isWin ? '+5 pts' : '0 pts'}</span>
                       </div>
-                      <div className="flex items-center justify-center gap-1 bg-white py-1 rounded border border-[#131010]/20 shadow-sm">
-                        <span>🥉</span>
-                        <span className="text-[#131010] font-black">{sub.rank3Count || 0}</span>
+                      <div className="flex justify-between items-center bg-white px-2 py-1 rounded border border-[#131010]/20 shadow-[1px_1px_0px_0px_#131010]">
+                        <span className="font-bold text-[#131010]/80">Round Total:</span>
+                        <span className="font-black text-[#5F8B4C]">{sub.roundScore || 0} pts</span>
                       </div>
                     </div>
                   </div>
@@ -131,7 +143,17 @@ const Results: React.FC<ResultsProps> = ({
           </div>
         </div>
       )}
-
+          <div className="text-center animate-fade-in-up pb-8">
+            <button
+              onClick={() => setViewScoreboard(true)}
+              className="px-6 py-2 bg-white text-[#131010] font-bold font-poppins border-2 border-[#131010] rounded-xl shadow-[3px_3px_0px_0px_#131010] hover:bg-slate-50 transition-all active:translate-y-1 active:shadow-none"
+            >
+              Skip to Scoreboard →
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6 animate-fade-in-up">
       {/* 2. Interim Leaderboard Plaque */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border-2 border-[#131010] shadow-[4px_4px_0px_0px_#131010] mb-6">
         <div className="flex items-center justify-between mb-5 border-b-2 border-[#131010] pb-3">
@@ -217,6 +239,8 @@ const Results: React.FC<ResultsProps> = ({
           </div>
         )}
       </div>
+      </div>
+      )}
 
     </div>
   );

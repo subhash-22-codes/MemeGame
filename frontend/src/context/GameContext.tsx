@@ -78,6 +78,7 @@ export type GameState = {
   finalResult?: FinalResult;
   gamePhase:
     | 'lobby'
+    | 'roundTransition'
     | 'promptSpinner'
     | 'judgeSelection'
     | 'sentenceCreation'
