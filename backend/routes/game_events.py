@@ -225,16 +225,33 @@ def finalize_game(room_id: str) -> dict | None:
         judge_history = room.get("judgeHistory", [])
         all_judge_ids = list(set(judge_history)) if judge_history else [host_data.get("id")] if host_data.get("id") else []
 
+        best_memes_history = room.get("bestMemesHistory", [])
         submissions = room.get("submissions", [])
         best_sub = None
-        if submissions:
+        
+        if best_memes_history:
+            sorted_history = sorted(best_memes_history, key=lambda s: s.get("roundScore", s.get("score", 0)), reverse=True)
+            if sorted_history:
+                best_sub = {
+                    "username": sorted_history[0].get("username", "Player"),
+                    "memeUrl": sorted_history[0].get("memeUrl", ""),
+                    "prompt": sorted_history[0].get("roundPrompt", room.get("currentSentence") or "Meme of the Match"),
+                    "score": sorted_history[0].get("roundScore", sorted_history[0].get("score", 0)),
+                    "playerId": sorted_history[0].get("playerId"),
+                    "avatar": sorted_history[0].get("avatar"),
+                    "memeId": sorted_history[0].get("memeId")
+                }
+        elif submissions:
             sorted_subs = sorted(submissions, key=lambda s: s.get("roundScore", s.get("score", 0)), reverse=True)
             if sorted_subs:
                 best_sub = {
                     "username": sorted_subs[0].get("username", "Player"),
                     "memeUrl": sorted_subs[0].get("memeUrl", ""),
                     "prompt": room.get("currentSentence") or sorted_subs[0].get("title", "Meme of the Match"),
-                    "score": sorted_subs[0].get("roundScore", sorted_subs[0].get("score", 0))
+                    "score": sorted_subs[0].get("roundScore", sorted_subs[0].get("score", 0)),
+                    "playerId": sorted_subs[0].get("playerId"),
+                    "avatar": sorted_subs[0].get("avatar"),
+                    "memeId": sorted_subs[0].get("memeId")
                 }
 
         result_doc = {
@@ -1097,7 +1114,7 @@ def register_socket_events(socketio):
             best_sub = max(submissions, key=sort_key, default=None)
             for sub in submissions:
                 if sub is best_sub and sort_key(sub)[0] > 0:
-                    sub["roundScore"] += 15
+                    sub["roundScore"] += 5
                     sub["score"] = sub["roundScore"]
                     sub["isWinner"] = True
                 else:
@@ -1207,9 +1224,16 @@ def register_socket_events(socketio):
                     p["roundScores"] = round_scores
                     updated_players.append(p)
 
+                best_sub_this_round = next((s for s in submissions if s.get("isWinner")), None)
+                update_query = {"$set": {"submissions": submissions, "players": updated_players}}
+                if best_sub_this_round:
+                    best_sub_copy = dict(best_sub_this_round)
+                    best_sub_copy["roundPrompt"] = room.get("currentSentence", "")
+                    update_query["$push"] = {"bestMemesHistory": best_sub_copy}
+
                 rooms_collection.update_one(
                     {"roomId": room_id},
-                    {"$set": {"submissions": submissions, "players": updated_players}}
+                    update_query
                 )
 
                 if int(current_round) >= int(total_rounds):
@@ -1307,14 +1331,16 @@ def register_socket_events(socketio):
                         "wheelSpinnerId": wheel_spinner_id,
                         "wheelSpun": False,
                         "votedPlayerIds": [],
+                        "gamePhase": "roundTransition"
                     },
                     "$push": {
                         "creatorHistory": next_creator_id
                     }
                 }
 
-                broadcast_state(room_id, next_round_update, "promptSpinner", socketio)
-                start_room_timer(room_id, 15, "auto_spin_wheel", socketio)
+                rooms_collection.update_one({"roomId": room_id}, next_round_update)
+                broadcast_state(room_id, next_round_update, "roundTransition", socketio)
+                start_room_timer(room_id, 4, "roundTransition", socketio)
 
         except Exception as e:
             logger.error(f"[ERROR] Error in nextRound: {str(e)}")
@@ -1413,7 +1439,16 @@ def register_socket_events(socketio):
 
                 phase = room.get('gamePhase')
 
-                if ttype == "auto_spin_wheel":
+                if ttype == "roundTransition":
+                    if phase != "roundTransition":
+                        logger.info(f"[TIMER] Ignoring stale roundTransition timer for {rid} (current phase: {phase})")
+                        return
+                    logger.info(f"[TIMER] roundTransition complete for {rid}, moving to promptSpinner")
+                    rooms_collection.update_one({"roomId": rid}, {"$set": {"gamePhase": "promptSpinner"}})
+                    broadcast_state(rid, {"$set": {"gamePhase": "promptSpinner"}}, "promptSpinner", sio)
+                    start_room_timer(rid, 15, "auto_spin_wheel", sio)
+
+                elif ttype == "auto_spin_wheel":
                     if phase != "promptSpinner" or room.get("wheelSpun"):
                         logger.info(f"[TIMER] Ignoring stale auto_spin_wheel timer for {rid} (current phase: {phase})")
                         return
@@ -1527,9 +1562,16 @@ def register_socket_events(socketio):
                         p["roundScores"] = round_scores
                         updated_players.append(p)
 
+                    best_sub_this_round = next((s for s in submissions if s.get("isWinner")), None)
+                    update_query = {"$set": {"submissions": submissions, "players": updated_players}}
+                    if best_sub_this_round:
+                        best_sub_copy = dict(best_sub_this_round)
+                        best_sub_copy["roundPrompt"] = room.get("currentSentence", "")
+                        update_query["$push"] = {"bestMemesHistory": best_sub_copy}
+
                     rooms_collection.update_one(
                         {"roomId": rid},
-                        {"$set": {"submissions": submissions, "players": updated_players}}
+                        update_query
                     )
 
                     if int(current_round) >= int(total_rounds):
