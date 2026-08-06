@@ -13,6 +13,7 @@ const RoomLobby = React.lazy(() => import('./pages/RoomLobby'));
 const CreateRoom = React.lazy(() => import('./pages/CreateRoom'));
 const JoinRoom = React.lazy(() => import('./pages/JoinRoom'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const AuthPage = React.lazy(() => import('./pages/AuthPage'));
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
 const HowToPlay = React.lazy(() => import('./pages/HowToPlay'));
 const Game = React.lazy(() => import('./pages/Game'));
@@ -69,6 +70,7 @@ function App() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<LandingPage />} />
+                  <Route path="/auth" element={<AuthPage />} />
                   <Route
                     path="/create"
                     element={

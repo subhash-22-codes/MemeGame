@@ -280,7 +280,7 @@ const HowToPlay: React.FC = () => {
               </div>
 
               <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
-                <img src="judge2.jpg" alt="Judge" className="w-full h-full object-cover" />
+                <img src="JudgeCame.webp" alt="Judge" className="w-full h-full object-cover" />
                 <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
                   <p className="font-black text-sm text-[#131010]">The Prompt Master Has Arrived!</p>
                   <p className="text-xs font-bold text-[#131010]/60 font-courier">Ready to drop a wild prompt</p>
@@ -295,7 +295,7 @@ const HowToPlay: React.FC = () => {
           <motion.div className="bg-[#5F8B4C] rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#131010]" variants={cardVariants} whileHover="hover">
             <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
               <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80 order-2 lg:order-1">
-                <img src="codeworks.jpg" alt="Code works" className="w-full h-full object-cover" />
+                <img src="JS.webp" alt="Code works" className="w-full h-full object-cover" />
                 <div className="absolute bottom-4 right-4 bg-[#FFDDAB] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3 max-w-[80%]">
                   <p className="font-black text-sm text-[#131010]">"When your code works on the first try..."</p>
                   <p className="text-xs font-bold text-[#131010]/60 font-courier mt-1">Challenge Set!</p>
@@ -367,7 +367,7 @@ const HowToPlay: React.FC = () => {
               </div>
 
               <div className="relative rounded-2xl border-4 border-[#131010] shadow-[6px_6px_0px_0px_#131010] overflow-hidden bg-white h-60 sm:h-80">
-                <img src="memenights.jpg" alt="Hunt" className="w-full h-full object-cover" />
+                <img src="bulkmemes.webp" alt="Hunt" className="w-full h-full object-cover" />
                 <div className="absolute top-4 right-4 bg-[#D98324] text-[#131010] border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] px-4 py-2 rounded-full font-black text-xl">
                   0:32
                 </div>
@@ -389,7 +389,7 @@ const HowToPlay: React.FC = () => {
           <motion.div className="bg-[#131010] rounded-3xl p-6 sm:p-10 border-4 border-[#131010] shadow-[8px_8px_0px_0px_#D98324]" variants={cardVariants} whileHover="hover">
             <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
               <div className="relative rounded-2xl border-4 border-[#D98324] shadow-[6px_6px_0px_0px_#D98324] overflow-hidden bg-white h-60 sm:h-80 order-2 lg:order-1">
-                <img src="winchillguy.jpg" alt="Reveal" className="w-full h-full object-cover" />
+                <img src="winner.webp" alt="Reveal" className="w-full h-full object-cover" />
                 <div className="absolute bottom-4 left-4 bg-white border-2 border-[#131010] shadow-[2px_2px_0px_0px_#131010] rounded-lg p-3">
                   <p className="font-black text-sm text-[#131010]">Round Winner!</p>
                   <p className="text-xs font-bold text-[#131010]/60 font-courier">Perfect match earned the points</p>
